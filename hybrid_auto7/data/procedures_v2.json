@@ -1,0 +1,69 @@
+[
+  {
+    "name": "cell_tune_3x",
+    "description": "Wide-range XFRMR+COUPLER position sweep, then cell_nudging_moves x 3.  Combine with 'tight_1.0' SWR profile to land near 1.0:1.",
+    "steps": [
+      "sweep_XFRMR_pos_wide",
+      "sweep_COUPLER_pos_wide",
+      "tune_XFRMR_length",
+      "nudge_XFRMR_spacing",
+      "tune_COUPLER_length",
+      "nudge_COUPLER_spacing",
+      "tune_DE_length_resonance",
+      "retune_XFRMR_length",
+      "retune_COUPLER_length",
+      "nudge_REF_position",
+      "tune_REF_length",
+      "tune_XFRMR_length",
+      "nudge_XFRMR_spacing",
+      "tune_COUPLER_length",
+      "nudge_COUPLER_spacing",
+      "tune_DE_length_resonance",
+      "retune_XFRMR_length",
+      "retune_COUPLER_length",
+      "nudge_REF_position",
+      "tune_REF_length",
+      "tune_XFRMR_length",
+      "nudge_XFRMR_spacing",
+      "tune_COUPLER_length",
+      "nudge_COUPLER_spacing",
+      "tune_DE_length_resonance",
+      "retune_XFRMR_length",
+      "retune_COUPLER_length",
+      "nudge_REF_position",
+      "tune_REF_length"
+    ]
+  },
+  {
+    "name": "full_build_directors",
+    "steps": [
+      "tune_REF_length",
+      "nudge_REF_position",
+      "tune_DIR1_position",
+      "tune_DIR1_length",
+      "tune_DIR2_position",
+      "tune_DIR2_length",
+      "tune_DIR3_position",
+      "tune_DIR3_length",
+      "tune_DIR4_position",
+      "tune_DIR4_length",
+      "tune_REF_length"
+    ],
+    "notes": "Run AFTER cell_tune_3x and adopting its result. Adds REF + 4 directors."
+  },
+  {
+    "name": "cell_nudging_moves",
+    "steps": [
+      "tune_XFRMR_length",
+      "nudge_XFRMR_spacing",
+      "tune_COUPLER_length",
+      "nudge_COUPLER_spacing",
+      "tune_DE_length_resonance",
+      "retune_XFRMR_length",
+      "retune_COUPLER_length",
+      "nudge_REF_position",
+      "tune_REF_length"
+    ],
+    "notes": ""
+  }
+]

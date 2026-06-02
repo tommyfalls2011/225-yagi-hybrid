@@ -1,0 +1,29 @@
+{
+  "name": "default_3el_cell",
+  "elements": [
+    {
+      "name": "XFRMR",
+      "init_position_in": 36.0,
+      "init_length_in": 172.0
+    },
+    {
+      "name": "DE",
+      "init_position_in": 51.0,
+      "init_length_in": 196.0
+    },
+    {
+      "name": "COUPLER",
+      "init_position_in": 69.0,
+      "init_length_in": 155.0
+    }
+  ],
+  "tune_order": [
+    "XFRMR_length",
+    "DE_length",
+    "COUPLER_length",
+    "XFRMR_position",
+    "COUPLER_position",
+    "DE_position"
+  ],
+  "notes": "Inches from REF=0. Sim explores within rules_v2 bounds."
+}

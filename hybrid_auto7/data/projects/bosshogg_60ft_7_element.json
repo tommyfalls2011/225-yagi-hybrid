@@ -1,0 +1,56 @@
+{
+  "boom_diameter_in": 3.0,
+  "boom_length_ft": 61.458333333333336,
+  "cell_mounting_style": "de_only_insulated",
+  "center_half_len_in": 36.0,
+  "center_od_in": 1.125,
+  "champion_run_id": null,
+  "design_priority": "high_gain",
+  "element_count": 5,
+  "element_overrides": {
+    "COUPLER": {
+      "length_in": 174.0,
+      "position_in": 69.5
+    },
+    "DE": {
+      "length_in": 209.99999999999997,
+      "position_in": 60.5
+    },
+    "DIR1": {
+      "length_in": 197.5,
+      "position_in": 124.5
+    },
+    "DIR2": {
+      "length_in": 185.25,
+      "position_in": 420.0
+    },
+    "DIR3": {
+      "length_in": 186.5,
+      "position_in": 709.5
+    },
+    "REF": {
+      "length_in": 234.0,
+      "position_in": 0.0
+    },
+    "XFRMR": {
+      "length_in": 198.99999999999997,
+      "position_in": 50.5
+    }
+  },
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "ground_epsr": 13.0,
+  "ground_mode": "average",
+  "ground_sigma_s_per_m": 0.005,
+  "height_ft": 62.0,
+  "min_front_back_db": 24.0,
+  "mode": "hybrid",
+  "name": "bosshogg_60ft_7_element",
+  "notes": "8-element hybrid count; physical 10-element champion seed",
+  "outer_od_in": 1.0,
+  "prefer_gain": true,
+  "target_max_swr": 1.15,
+  "target_z_ohm": 50.0,
+  "tuning_procedure": "cell_then_directors_repeat",
+  "tx_power_watts": 30000.0
+}

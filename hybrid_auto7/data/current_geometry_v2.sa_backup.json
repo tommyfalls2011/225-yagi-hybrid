@@ -1,0 +1,44 @@
+{
+  "elements": [
+    {
+      "name": "REF",
+      "position_in": 0.0,
+      "length_in": 218.5
+    },
+    {
+      "name": "XFRMR",
+      "position_in": 41.5,
+      "length_in": 199.5
+    },
+    {
+      "name": "DE",
+      "position_in": 47.5,
+      "length_in": 210.0
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 75.5,
+      "length_in": 173.0
+    },
+    {
+      "name": "DIR1",
+      "position_in": 137.0,
+      "length_in": 195.0
+    },
+    {
+      "name": "DIR2",
+      "position_in": 222.0,
+      "length_in": 188.0
+    },
+    {
+      "name": "DIR3",
+      "position_in": 300.0,
+      "length_in": 184.0
+    },
+    {
+      "name": "DIR4",
+      "position_in": 360.0,
+      "length_in": 180.0
+    }
+  ]
+}

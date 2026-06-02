@@ -1,0 +1,5 @@
+__pycache__/
+*.nec
+*.db
+yagi_runs/
+yagi_seeds/

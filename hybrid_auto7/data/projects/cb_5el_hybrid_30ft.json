@@ -1,0 +1,19 @@
+{
+  "boom_diameter_in": 2.0,
+  "boom_length_ft": 30.0,
+  "center_half_len_in": 36.0,
+  "center_od_in": 0.625,
+  "champion_run_id": null,
+  "element_count": 5,
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "height_ft": 36.0,
+  "min_front_back_db": 20.0,
+  "mode": "hybrid",
+  "name": "cb_5el_hybrid_30ft",
+  "notes": "5-element hybrid count; physical 7-element champion seed",
+  "outer_od_in": 0.5,
+  "prefer_gain": true,
+  "target_max_swr": 1.5,
+  "target_z_ohm": 50.0
+}

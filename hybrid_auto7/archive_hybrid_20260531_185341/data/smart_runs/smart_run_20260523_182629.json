@@ -1,0 +1,65 @@
+{
+  "elapsed_sec": 42.97154784202576,
+  "args": {
+    "trials": 10,
+    "top_k": 2,
+    "use_kb": false,
+    "seed": null
+  },
+  "kb_state_after": {
+    "good_cells": [],
+    "bad_starts": [
+      {
+        "de_pos": 52.6,
+        "reason": "swr_explode",
+        "max_swr": 41.805738,
+        "logged_at": "2026-05-23T18:25:52+00:00"
+      },
+      {
+        "de_pos": 64.6,
+        "reason": "swr_explode",
+        "max_swr": 60.474684,
+        "logged_at": "2026-05-23T18:25:57+00:00"
+      },
+      {
+        "de_pos": 58.4,
+        "reason": "swr_explode",
+        "max_swr": 51.211117,
+        "logged_at": "2026-05-23T18:26:03+00:00"
+      },
+      {
+        "de_pos": 43.0,
+        "reason": "swr_explode",
+        "max_swr": 25.879334,
+        "logged_at": "2026-05-23T18:26:08+00:00"
+      },
+      {
+        "de_pos": 67.4,
+        "reason": "swr_explode",
+        "max_swr": 64.286391,
+        "logged_at": "2026-05-23T18:26:13+00:00"
+      },
+      {
+        "de_pos": 36.7,
+        "reason": "swr_explode",
+        "max_swr": 16.254467,
+        "logged_at": "2026-05-23T18:26:19+00:00"
+      },
+      {
+        "de_pos": 49.3,
+        "reason": "swr_explode",
+        "max_swr": 36.297815,
+        "logged_at": "2026-05-23T18:26:24+00:00"
+      },
+      {
+        "de_pos": 46.2,
+        "reason": "swr_explode",
+        "max_swr": 31.12419,
+        "logged_at": "2026-05-23T18:26:29+00:00"
+      }
+    ],
+    "best_full_designs": [],
+    "dead_paths": [],
+    "schema_version": 1
+  }
+}

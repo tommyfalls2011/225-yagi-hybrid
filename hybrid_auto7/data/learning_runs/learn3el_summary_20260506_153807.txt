@@ -1,0 +1,73 @@
+3-ELEMENT HYBRID LEARNING REPORT
+================================
+
+Best score:           12987.1
+Min SWR:              1.090
+Max SWR:              1.307
+Avg SWR:              1.183
+Center R:             42.717 ohm
+Center X:             -0.320 ohm
+Center SWR:           1.171
+Avg R:                42.828 ohm
+Avg |X|:              2.133 ohm
+Worst RL:             17.51 dB
+Forward gain:         7.590 dBi
+Front/back:           50.020 dB
+
+Best layout
+-----------
+REF      pos=   0.000 in  spacing=   0.000 in  length= 220.509 in
+XFRMR    pos=  39.000 in  spacing=  39.000 in  length= 199.509 in
+DE       pos=  43.000 in  spacing=   4.000 in  length= 214.509 in
+COUPLER  pos=  72.000 in  spacing=  29.000 in  length= 183.509 in
+DIR1     pos= 110.000 in  spacing=  38.000 in  length= 191.509 in
+
+Best move
+---------
+{
+  "generation": 1,
+  "stage": "stage4_x_len",
+  "move": "x_len=200.508549",
+  "before_score": -4627.273962107541,
+  "after_score": -725.2901373028126,
+  "score_delta": 3901.983824804728,
+  "before_max_swr": 18.802346,
+  "after_max_swr": 3.529914,
+  "before_avg_swr": 9.515905,
+  "after_avg_swr": 3.027453,
+  "before_center_r": 10.818116161206072,
+  "after_center_r": 24.521066143722223,
+  "before_center_x": -44.21642964330007,
+  "after_center_x": -31.429736561669547,
+  "before_gain": 5.91,
+  "after_gain": 7.09,
+  "before_fb": 5.07,
+  "after_fb": 11.73
+}
+
+Worst move
+----------
+{
+  "generation": 1,
+  "stage": "stage4_x_len",
+  "move": "x_len=215.508549",
+  "before_score": -823.4623056642565,
+  "after_score": -1416789.6662426111,
+  "score_delta": -1415966.2039369468,
+  "before_max_swr": 4.465783,
+  "after_max_swr": 7316.646682,
+  "before_avg_swr": 3.803072,
+  "after_avg_swr": 1249.689724,
+  "before_center_r": 18.2303484222878,
+  "after_center_r": 0.31825815357273385,
+  "before_center_x": -29.192138823927873,
+  "after_center_x": -28.875540678905285,
+  "before_gain": 7.52,
+  "after_gain": 8.16,
+  "before_fb": 17.86,
+  "after_fb": 17.54
+}
+
+NEC file:             /home/sma-ububtu24/scripts/hybrid_auto7/models/learn3el_best_20260506_153807.nec
+JSON best:            /home/sma-ububtu24/scripts/hybrid_auto7/data/learning_runs/learn3el_best_20260506_153807.json
+Move log:             /home/sma-ububtu24/scripts/hybrid_auto7/data/learning_runs/learn3el_moves_20260506_153807.jsonl

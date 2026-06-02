@@ -1,0 +1,30 @@
+FULL HYBRID TUNE REPORT (from cell seed)
+==========================================
+
+Cell seed source:      /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/best_cell_seed.json
+Total elements:        7  (REF + XFRMR + DE + COUPLER + 3 directors)
+Priority profile:      gain
+
+Score:                 24395.7
+Center R:              64.928 ohm
+Center X:              25.103 ohm
+Center SWR:            1.661
+Max SWR (in band):     1.732
+Avg SWR (in band):     1.657
+Return loss (center):  12.10 dB
+Real gain (ground):    12.51 dBi
+Peak elev angle:       10.0 deg
+Front/back:            11.98 dB
+
+Geometry
+------------------------------------------
+REF      pos=   0.000 in  length= 231.534 in
+XFRMR    pos=  22.750 in  length= 194.509 in
+DE       pos=  50.750 in  length= 220.509 in
+COUPLER  pos=  75.500 in  length= 178.509 in
+DIR1     pos=  93.500 in  length= 176.509 in
+DIR2     pos= 123.500 in  length= 174.509 in
+DIR3     pos= 213.500 in  length= 154.509 in
+
+Best NEC:   /home/sma-ububtu24/scripts/hybrid_auto7/models/full_hybrid_3dir_20260528_175310.nec
+Best JSON:  /home/sma-ububtu24/scripts/hybrid_auto7/data/full_hybrid_runs/full_hybrid_3dir_20260528_175310.json

@@ -1,0 +1,31 @@
+CASCADING PROCEDURE CELL TUNE REPORT
+====================================
+
+Procedure: Phase 1 (DE only)  ->  Phase 2 (add XFRMR)  ->  Phase 3 (add COUPLER)
+
+Best score:           -2140.1
+Min SWR:              2.294
+Max SWR:              2.780
+Avg SWR:              2.528
+Center R:             38.420 ohm
+Center X:             -39.966 ohm
+Center SWR:           2.502
+Center RL:            7.354 dB
+Avg R:                38.494 ohm
+Avg |X|:              40.494 ohm
+Real gain (ground):   8.94 dBi
+Peak elev angle:      10.0 deg
+
+Best cell layout
+----------------
+XFRMR    pos=  30.250 in  length= 191.833 in
+DE       pos=  60.000 in  length= 208.583 in
+COUPLER  pos=  86.000 in  length= 181.583 in
+
+XFRMR-DE spacing:     29.750 in
+DE-COUPLER spacing:   26.000 in
+
+Best NEC:             /home/sma-ububtu24/scripts/hybrid_auto7/models/learn_cell_cascade_20260518_030452.nec
+Best JSON:            /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/learn_cell_cascade_best_20260518_030452.json
+Seed promoted:        True
+Move log:             /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/learn_cell_cascade_moves_20260518_030452.jsonl

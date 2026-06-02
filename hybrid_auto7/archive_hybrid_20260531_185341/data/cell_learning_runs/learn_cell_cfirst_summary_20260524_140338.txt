@@ -1,0 +1,109 @@
+CELL PLACEMENT TUNE REPORT (COUPLER-FIRST TEST)
+==========================
+
+Best score:           17426.0
+Min SWR:              1.009
+Max SWR:              1.490
+Avg SWR:              1.202
+Center R:             50.465 ohm
+Center X:             0.003 ohm
+Center SWR:           1.009
+Center RL:            46.686 dB
+Avg R:                46.468 ohm
+Avg |X|:              7.351 ohm
+
+Best cell layout
+----------------
+XFRMR    pos=  32.000 in  length= 214.509 in
+DE       pos=  64.000 in  length= 214.759 in
+COUPLER  pos=  84.750 in  length= 201.509 in
+
+XFRMR-DE spacing:     32.000 in
+DE-COUPLER spacing:   20.750 in
+
+Best move
+---------
+{
+  "stage": "stage7_dlen",
+  "move": "de_len",
+  "value": 208.508549,
+  "before_score": -1361.3122841915813,
+  "after_score": 2603.0717555782044,
+  "score_delta": 3964.384039769786,
+  "before_max_swr": 2.610106,
+  "after_max_swr": 2.384041,
+  "before_avg_swr": 2.212853,
+  "after_avg_swr": 2.026302,
+  "before_center_r": 32.29384018401735,
+  "after_center_r": 33.10872835908871,
+  "before_center_x": -23.250602298736254,
+  "after_center_x": -19.33761446656915,
+  "before_center_swr": 2.038365299800733,
+  "after_center_swr": 1.8608494330655123,
+  "before_geometry": {
+    "xfrmr_position_in": 32.0,
+    "de_position_in": 60.0,
+    "coupler_position_in": 84.0,
+    "xfrmr_spacing_in": 28.0,
+    "coupler_spacing_in": 24.0,
+    "xfrmr_length_in": 214.508549,
+    "de_length_in": 207.508549,
+    "coupler_length_in": 201.508549
+  },
+  "after_geometry": {
+    "xfrmr_position_in": 32.0,
+    "de_position_in": 60.0,
+    "coupler_position_in": 84.0,
+    "xfrmr_spacing_in": 28.0,
+    "coupler_spacing_in": 24.0,
+    "xfrmr_length_in": 214.508549,
+    "de_length_in": 208.508549,
+    "coupler_length_in": 201.508549
+  }
+}
+
+Worst move
+----------
+{
+  "stage": "stage8_de_only",
+  "move": "de_pos",
+  "value": 54.0,
+  "before_score": 13547.87688617958,
+  "after_score": -1830.6350151386903,
+  "score_delta": -15378.51190131827,
+  "before_max_swr": 1.974159,
+  "after_max_swr": 3.944086,
+  "before_avg_swr": 1.486903,
+  "after_avg_swr": 2.732808,
+  "before_center_r": 38.427426491195945,
+  "after_center_r": 20.894986486266383,
+  "before_center_x": 4.0360825565030405,
+  "after_center_x": 5.87266154633195,
+  "before_center_swr": 1.3214180632185744,
+  "after_center_swr": 2.432776153418471,
+  "before_geometry": {
+    "xfrmr_position_in": 32.0,
+    "de_position_in": 60.0,
+    "coupler_position_in": 84.0,
+    "xfrmr_spacing_in": 28.0,
+    "coupler_spacing_in": 24.0,
+    "xfrmr_length_in": 214.508549,
+    "de_length_in": 214.508549,
+    "coupler_length_in": 201.508549
+  },
+  "after_geometry": {
+    "xfrmr_position_in": 32.0,
+    "de_position_in": 54.0,
+    "coupler_position_in": 84.0,
+    "xfrmr_spacing_in": 22.0,
+    "coupler_spacing_in": 30.0,
+    "xfrmr_length_in": 214.508549,
+    "de_length_in": 214.508549,
+    "coupler_length_in": 201.508549
+  }
+}
+
+Best NEC:             /home/sma-ububtu24/scripts/hybrid_auto7/models/learn_cell_cfirst_best_20260524_140338.nec
+Best JSON:            /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/learn_cell_cfirst_best_20260524_140338.json
+Reusable seed:        /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/best_cell_seed_cfirst.json
+Move log:             /home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/learn_cell_cfirst_moves_20260524_140338.jsonl

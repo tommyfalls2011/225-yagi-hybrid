@@ -1,0 +1,56 @@
+{
+  "boom_diameter_in": 1.5,
+  "boom_length_ft": 22.0,
+  "cell_mounting_style": "de_only_insulated",
+  "center_half_len_in": 36.0,
+  "center_od_in": 0.625,
+  "champion_run_id": null,
+  "design_priority": "high_gain",
+  "element_count": 5,
+  "element_overrides": {
+    "COUPLER": {
+      "length_in": 174.5,
+      "position_in": 47.0
+    },
+    "DE": {
+      "length_in": 209.99999999999997,
+      "position_in": 41.0
+    },
+    "DIR1": {
+      "length_in": 200.0,
+      "position_in": 98.0
+    },
+    "DIR2": {
+      "length_in": 196.5,
+      "position_in": 180.8
+    },
+    "DIR3": {
+      "length_in": 190.5,
+      "position_in": 301.6
+    },
+    "REF": {
+      "length_in": 232.0,
+      "position_in": 0.0
+    },
+    "XFRMR": {
+      "length_in": 198.99999999999997,
+      "position_in": 29.0
+    }
+  },
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "ground_epsr": 13.0,
+  "ground_mode": "average",
+  "ground_sigma_s_per_m": 0.005,
+  "height_ft": 30.0,
+  "min_front_back_db": 24.0,
+  "mode": "hybrid",
+  "name": "225_hybrid_26ft_7_element",
+  "notes": "",
+  "outer_od_in": 0.5,
+  "prefer_gain": true,
+  "target_max_swr": 1.15,
+  "target_z_ohm": 50.0,
+  "tuning_procedure": "cell_then_directors_repeat",
+  "tx_power_watts": 30000.0
+}
