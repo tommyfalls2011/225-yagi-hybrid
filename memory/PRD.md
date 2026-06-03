@@ -63,3 +63,23 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
 - Optional: Streamlit "Auto-Learn" button wiring run_learning into Run page.
 - Rescue 1071 hybrid runs from misnamed yagi_history.db -> proper hybrid DB (user said start clean, so optional).
 - Yagi opt_7el_yagi3.py self-learning (deferred per user; hybrid first).
+
+## YAGI-2 fixes (2026-06-03, via Streamlit "Yagi Designer" = opt_7el_yagi2.py + yagiopt)
+- PRE-EXISTING bug (not introduced by us): hardcoded-7-element assumptions crashed any N!=7:
+  * yagiopt/geometry.py unpack_design (x[13] height) -> N-agnostic (len//2)
+  * yagiopt/geometry.py move_element_position (1..6, spacings[5]) -> N-agnostic
+  * opt_7el_yagi2.py get_stage_active_idx ([0,1,2,7,8,13], range(14)) -> derived from N
+  Fix verified: 6-el tune completes -> SWR 1.167, gain 15.1 dBi, F/B 17 dB. (commit b0ed333)
+- Yagi history/learning was DEAD: opt_7el_yagi2 + yagiopt/history.py pointed at ~/scripts/yagi_history.db
+  = the MISNAMED HYBRID db (wrong schema) -> 'no such column: timestamp/center_freq_mhz' on read+write.
+  Fix: point Yagi to its own yagi_opt_history.db (history.py _DEFAULT_DB + read default + save msg).
+  Also learn-seed score floor was 100 but good designs score ~ -90 -> lowered min_score default to -1e9
+  (rank by score+freq match), min_gain 15->10. Verified warm-start: run#1 saves -> run#2 '[learn] using
+  best as seed: run #1' and seeds from its geometry. (commit c8bc1d7)
+- DB map now: yagi_history.db = OLD hybrid data (misnamed, untouched) ; auto7_history.db = hybrid auto_learn ;
+  yagi_opt_history.db = NEW clean Yagi optimizer history (self-learning).
+
+## NEXT
+- Streamlit Auto-Learn button for hybrid (pending user 1a/1b choice).
+- Optionally rescue 1071 hybrid runs from misnamed yagi_history.db.
+- Seeder supports N=2..12; UI slider goes to 18 - cap UI to 12 or extend seeding.
