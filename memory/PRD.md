@@ -47,3 +47,19 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   same GN-card / gain-reading issues; align hybrid rules vs yagi rules.
 - P2: Clean junk files committed to repo (datetime ~55MB, re ~13MB shell-redirect
   artifacts).
+
+## HYBRID self-learning (2026-06-03)
+- DB audit: yagi_history.db (3.2M, 1071 runs) actually holds HYBRID data (REF/XFRMR/DE/COUPLER/DIR..) - misnamed. auto7_history.db was EMPTY (user cleared it). Yagi opt_7el_yagi3.py saves nothing. yagiopt/history.py schema != actual file.
+- Hybrid engines: engine.py (necpp, impedance only, ground OK) + v2_runner.py (nec2c binary, impedance+gain, GN/RP text cards OK). nec2c installed via apt here.
+- Old "learning": Run page -> learning_v2.json (JSON, not SQL). Manual "adopt geometry". No closed loop. move_history/insert_run never called.
+- BUILT: hyagi/auto_learn.py (closed-loop self-learner) + auto_learn_run.py (CLI).
+  Loop: warm-start from DB best (by project signature) -> run procedure (v2_runner) -> fine band sweep -> save EVERY gen to auto7_history.db (runs+elements+freq_results) -> learn (narrow search around proven values, MoveMemory) -> auto-adopt -> stop at SWR<=target across band or plateau(patience) or max gens.
+  Added v2_runner.EVAL_FREQ_POINTS (full-band scoring) + v2_scorer wideband_1.2 profile (steep) + SWR-first adoption rule.
+- VALIDATED here: baseline band_max_swr 1.894 -> 1.30 (XFRMR+COUPLER proc) ; saved 3 runs/24 elements/27 freqs to DB; learning narrowed search gen2. Reaching exactly <=1.2 depends on procedure+physical geometry (user expertise) - engine works.
+- Target per user: SWR<=1.2 wideband. Stop defaults: target 1.2, patience 3.
+
+## NEXT
+- Tune/extend procedures (position + spacing sweeps) to reliably cross 1.2 on real builds; let user pick procedure.
+- Optional: Streamlit "Auto-Learn" button wiring run_learning into Run page.
+- Rescue 1071 hybrid runs from misnamed yagi_history.db -> proper hybrid DB (user said start clean, so optional).
+- Yagi opt_7el_yagi3.py self-learning (deferred per user; hybrid first).
