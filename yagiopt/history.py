@@ -2,7 +2,7 @@
 import json, sqlite3, datetime
 from pathlib import Path
 
-_DEFAULT_DB = Path(__file__).resolve().parent.parent / "yagi_history.db"
+_DEFAULT_DB = Path(__file__).resolve().parent.parent / "yagi_opt_history.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (

@@ -805,7 +805,7 @@ def _load_promoted_seed(n_elements):
 def _load_top_historical_seed(n_elements, center_freq_mhz, limit, min_gain, min_score, db_path):
     import sqlite3, json, os
     if not db_path:
-        db_path = os.path.expanduser("~/scripts/yagi_history.db")
+        db_path = os.path.expanduser("~/scripts/yagi_opt_history.db")
     if not os.path.exists(db_path):
         print(f"[learn] history DB not found at {db_path}")
         return None
@@ -887,9 +887,9 @@ def main():
     # OPT_LEARN_v1: self-learning from yagi_history.db
     ap.add_argument("--learn-from", type=int, default=100, help="Inspect last N history rows for seed candidates (0 disables)")
     ap.add_argument("--no-learn", action="store_true", help="Disable history-based seed warm-start")
-    ap.add_argument("--learn-min-gain", type=float, default=15.0, help="Min final_gain_db for a history row to be usable")
-    ap.add_argument("--learn-min-score", type=float, default=100.0, help="Min final_score for a history row to be usable")
-    ap.add_argument("--learn-db", type=str, default="", help="Override path to history DB (default ~/scripts/yagi_history.db)")
+    ap.add_argument("--learn-min-gain", type=float, default=10.0, help="Min final_gain_db for a history row to be usable")
+    ap.add_argument("--learn-min-score", type=float, default=-1e9, help="Min final_score floor (default: accept all; warm-start ranks by score + frequency match)")
+    ap.add_argument("--learn-db", type=str, default="", help="Override path to history DB (default ~/scripts/yagi_opt_history.db)")
     args = ap.parse_args()
 
     # BOOM_LOCK_v1: apply CLI args to module globals
@@ -1319,7 +1319,7 @@ def main():
                 tag=(lambda _t: (f"n{_requested_n}p={USER_POLARIZATION}" + (f"|{_t}" if _t else "")))(getattr(args,"tag",None)),
                 nec_file_path=getattr(args,"export_nec",None),
             )
-            print("\n[history] run saved as #" + str(_rid) + " in ~/scripts/yagi_history.db")
+            print("\n[history] run saved as #" + str(_rid) + " in ~/scripts/yagi_opt_history.db")
             print("[history] browse with:  yagihist recent 5   |   yagihist show " + str(_rid))
         except Exception as _e:
             print("\n[history] WARNING could not save run:", _e)
