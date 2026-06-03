@@ -85,11 +85,19 @@ def parse_nec_output(text):
     return impedances, pattern
 
 # ---------- Evaluator ----------
-def evaluate(elements, rules, height_ft=30.0):
+# Number of frequency points the scorer samples across the band.  Default 5
+# (legacy Run-page behaviour).  The self-learning loop raises this so the
+# optimizer actually "sees" the whole band and can be driven to a wideband
+# low-SWR target instead of only matching at 5 spot frequencies.
+EVAL_FREQ_POINTS = 5
+
+
+def evaluate(elements, rules, height_ft=30.0, n_points=None):
     glb = rules["global"]
     flow   = float(glb["freq_mhz_low"])
     fhigh  = float(glb["freq_mhz_high"])
-    n = 5
+    n = int(n_points) if n_points else int(EVAL_FREQ_POINTS)
+    n = max(2, n)
     freqs = [flow + i * (fhigh - flow) / (n - 1) for i in range(n)]
     try:
         nec = build_nec_card(elements, freqs, height_ft=height_ft)

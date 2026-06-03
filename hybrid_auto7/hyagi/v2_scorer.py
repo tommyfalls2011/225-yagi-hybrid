@@ -45,6 +45,13 @@ SWR_PROFILES = {
         "soft_penalty_slope":  4.0,
         "hard_penalty_slope":  18.0,
     },
+    "wideband_1.2": {
+        "label":               "Wideband -- hard target <=1.2:1 across band",
+        "ideal_max":           1.20,
+        "soft_max":            1.25,
+        "soft_penalty_slope":  120.0,
+        "hard_penalty_slope":  600.0,
+    },
     "ok_1.5": {
         "label":               "OK     -- target ~1.5:1  (customer build)",
         "ideal_max":           1.50,
