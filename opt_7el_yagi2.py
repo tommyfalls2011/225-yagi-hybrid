@@ -464,12 +464,23 @@ def combined_layout_score(metrics, target_rl_db, gain_enabled):
     return float(score)
 
 
-def get_stage_active_idx(stage_name):
+def get_stage_active_idx(stage_name, n=7):
+    # Indices into the [N lengths, N-1 spacings, 1 height] design vector.
+    # Derived from N so any element count works (was hardcoded to the 7-element
+    # / 14-slot layout, e.g. height at index 13, which overflowed for N!=7).
+    n = int(n)
+    total = 2 * n
+    height_idx = total - 1
+    sp0 = n  # first spacing index
+
+    def _clip(idxs):
+        return sorted({i for i in idxs if 0 <= i < total})
+
     if stage_name == "swrmatch":
-        return [0, 1, 2, 7, 8, 13]
+        return _clip([0, 1, 2, sp0, sp0 + 1, height_idx])
     if stage_name == "returnloss":
-        return [0, 1, 2, 7, 8, 9, 13]
-    return list(range(14))
+        return _clip([0, 1, 2, sp0, sp0 + 1, sp0 + 2, height_idx])
+    return list(range(total))
 
 
 def build_stage_bounds_from_base(base_x, stage_name):
@@ -574,7 +585,7 @@ def run_stage(stage_name, freqs_opt, center_freq, target_rl_db, use_real_ground,
         print("[WARN] workers > 1 is not reliable here with necpp and local best tracking; forcing workers=1")
         workers = 1
 
-    active_idx = get_stage_active_idx(stage_name)
+    active_idx = get_stage_active_idx(stage_name, len(np.asarray(seed_x)) // 2)
     full_bounds = build_stage_bounds_from_base(seed_x, stage_name)
     active_bounds = [full_bounds[i] for i in active_idx]
 

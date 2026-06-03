@@ -38,10 +38,14 @@ def pack_design(lengths, spacings, height):
 
 
 def unpack_design(x):
+    # Design vector layout is [N lengths, N-1 spacings, 1 height] = 2N values.
+    # Derive N from the vector length so any element count works (was hardcoded
+    # to 7, which crashed every non-7-element design with an IndexError).
     x = np.asarray(x, dtype=float)
-    lengths = np.array(x[:7], dtype=float)
-    spacings = np.array(x[7:13], dtype=float)
-    height = float(x[13])
+    n = len(x) // 2
+    lengths = np.array(x[:n], dtype=float)
+    spacings = np.array(x[n:-1], dtype=float)
+    height = float(x[-1])
     return lengths, spacings, height
 
 
@@ -73,14 +77,15 @@ def move_element_position(x_full, element_index, delta_ft):
     spacings = spacings.copy()
 
     i = int(element_index)
-    if i < 1 or i > 6:
-        raise ValueError("element_index must be in 1..6")
+    n = len(lengths)
+    if i < 1 or i > n - 1:
+        raise ValueError(f"element_index must be in 1..{n - 1}")
 
-    if i < 6:
+    if i < n - 1:
         spacings[i - 1] += float(delta_ft)
         spacings[i] -= float(delta_ft)
     else:
-        spacings[5] += float(delta_ft)
+        spacings[n - 2] += float(delta_ft)
 
     return pack_design(lengths, spacings, height)
 
