@@ -134,10 +134,14 @@ def evaluate(elements, rules, height_ft=30.0, n_points=None):
     peak = max(pattern, key=lambda t: t[2])
     peak_theta, peak_phi, _ = peak
     back_phi = (peak_phi + 180.0) % 360.0
-    back_gain = -99.0
-    for (t, p, g) in pattern:
-        if abs(t - peak_theta) < 0.5 and abs(p - back_phi) < 0.5:
-            back_gain = g; break
+    # Front-to-back must compare the forward peak against the REAR LOBE maximum,
+    # i.e. the strongest gain within +/-REAR_HALF deg of the back azimuth (over
+    # all elevations).  Reading a single 180-deg point can land in a sharp null
+    # and produce a physically impossible F/B of 60-100 dB.
+    REAR_HALF = 30.0
+    rear_vals = [g for (t, p, g) in pattern
+                 if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
+    back_gain = max(rear_vals) if rear_vals else (max_gain - 40.0)
     fb_db = max_gain - back_gain
     return {
         "max_swr": max_swr, "avg_swr": avg_swr,
