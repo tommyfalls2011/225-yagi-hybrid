@@ -1,0 +1,264 @@
+diff --git a/opt_7el_yagi3.py b/opt_7el_yagi3.py
+index 150e940..f0ac186 100644
+--- a/opt_7el_yagi3.py
++++ b/opt_7el_yagi3.py
+@@ -295,10 +295,12 @@ def apply_ground(nec, ground_variant):
+         return necpp.nec_gn_card(nec, -1, 0, 0, 0, 0, 0, 0, 0)
+ 
+     if ground_variant == "real2":
+-        return necpp.nec_gn_card(nec, 2, 0, 0, 0, GROUND_EPSR, GROUND_SIGMA, 0, 0)
++        # GN card: type=2 (Sommerfeld/Norton), radials=0, F1=rel. dielectric,
++        # F2=conductivity (S/m). epsr/sigma MUST go in the F1/F2 slots.
++        return necpp.nec_gn_card(nec, 2, 0, GROUND_EPSR, GROUND_SIGMA, 0, 0, 0, 0)
+ 
+     if ground_variant == "real0":
+-        return necpp.nec_gn_card(nec, 0, 0, 0, 0, GROUND_EPSR, GROUND_SIGMA, 0, 0)
++        return necpp.nec_gn_card(nec, 0, 0, GROUND_EPSR, GROUND_SIGMA, 0, 0, 0, 0)
+ 
+     if ground_variant == "perfect":
+         return necpp.nec_gn_card(nec, 1, 0, 0, 0, 0, 0, 0, 0)
+@@ -532,126 +534,145 @@ def _extract_first_numeric(value):
+     return None
+ 
+ 
+-def _try_add_rp_card(nec, theta_deg, phi_deg):
+-    rp = getattr(necpp, "nec_rp_card", None)
+-    if rp is None:
+-        return False
+-
+-    attempts = [
+-        (0, 1, 1, 0, 0, 0, 0, theta_deg, phi_deg, 0.0, 0.0, 0.0, 0.0),
+-        (0, 1, 1, 0, 0, 0, 0, theta_deg, phi_deg, 0.0, 0.0, 0.0, 1.0),
+-        (0, 1, 1, 0, 0, 0, theta_deg, phi_deg, 0.0, 0.0, 0.0, 0.0),
+-        (0, 1, 1, 0, 0, theta_deg, phi_deg, 0.0, 0.0, 0.0, 0.0),
+-    ]
+-
+-    for args in attempts:
+-        try:
+-            ret = rp(nec, *args)
+-            if ret == 0:
+-                return True
+-        except Exception:
+-            continue
+-    return False
++# ---------------------------------------------------------------------------
++# Radiation-pattern / gain reading.
++#
++# The installed necpp build exposes:
++#     nec_gain(nec, freq_idx, theta_idx, phi_idx)  -> total power gain in dBi
++#     nec_gain_max(nec, freq_idx), nec_gain_mean(...), ...
++# A radiation pattern must first be requested with an RP card.  We run ONE full
++# upper-hemisphere RP sweep per geometry and read every grid point back - this
++# is both correct and far faster than a separate solve per (elev, azimuth).
++# ---------------------------------------------------------------------------
++
++# Upper-hemisphere sampling grid.
++_RP_THETA0_DEG = 0.0      # theta measured down from the zenith (+Z)
++_RP_DTHETA_DEG = 5.0
++_RP_NTHETA = 19           # 0..90 deg -> horizon at the last row
++_RP_PHI0_DEG = 0.0
++_RP_DPHI_DEG = 5.0
++_RP_NPHI = 72             # 0..355 deg
++
++# The Yagi boom lies along +Y, so the main beam fires toward phi = 90 deg.
++_FWD_PHI_DEG = 90.0
++_REAR_PHI_DEG = 270.0
++_FB_SECTOR_HALFWIDTH_DEG = 30.0   # +/- window around forward / rear azimuth
++
++
++def _pattern_ground_variants(use_real_ground):
++    # Real-ground patterns are what we want; the trailing fallbacks only matter
++    # if a particular necpp build refuses a finite pattern for that ground model.
++    if use_real_ground:
++        return ["real2", "real0", "perfect", "free"]
++    return ["free"]
+ 
+ 
+-def _try_get_gain_from_context(nec):
+-    candidate_names = [
+-        "nec_gain_max",
+-        "nec_gain",
+-        "nec_rp_gain",
+-        "nec_gain_db",
+-        "nec_radiation_pattern_gain",
+-    ]
+-    candidate_argsets = [
+-        (nec,),
+-        (nec, 0),
+-        (nec, 0, 0),
+-        (nec, 1),
+-        (nec, 1, 1),
+-    ]
++def _phi_indices_in_sector(center_phi_deg, halfwidth_deg):
++    cols = []
++    for ip in range(_RP_NPHI):
++        phi = (_RP_PHI0_DEG + ip * _RP_DPHI_DEG) % 360.0
++        delta = abs((phi - (center_phi_deg % 360.0) + 180.0) % 360.0 - 180.0)
++        if delta <= halfwidth_deg + 1e-9:
++            cols.append(ip)
++    return cols
++
++
++def _gain_grid_from_context(nec):
++    """Run one full upper-hemisphere RP sweep and return an (NTHETA, NPHI)
++    numpy array of total power gain in dBi (NaN where unavailable)."""
++    ret = necpp.nec_rp_card(
++        nec,
++        0,                  # normal calculation mode (ground per GN card)
++        _RP_NTHETA,
++        _RP_NPHI,
++        0, 0, 0, 0,         # XNDA: total gain, no normalization, power gain, no avg
++        _RP_THETA0_DEG,
++        _RP_PHI0_DEG,
++        _RP_DTHETA_DEG,
++        _RP_DPHI_DEG,
++        0.0,                # radial distance (0 -> far field)
++        0.0,                # gain normalization factor
++    )
++    if ret != 0:
++        return None
+ 
+-    for name in candidate_names:
+-        fn = getattr(necpp, name, None)
+-        if fn is None:
+-            continue
+-        for args in candidate_argsets:
++    grid = np.full((_RP_NTHETA, _RP_NPHI), np.nan, dtype=float)
++    for it in range(_RP_NTHETA):
++        for ip in range(_RP_NPHI):
+             try:
+-                value = fn(*args)
++                grid[it, ip] = float(necpp.nec_gain(nec, 0, it, ip))
+             except Exception:
+-                continue
++                grid[it, ip] = np.nan
++    return grid
+ 
+-            num = _extract_first_numeric(value)
+-            if num is None:
+-                continue
+-            if np.isfinite(num) and -50.0 <= num <= 50.0:
+-                return float(num)
+ 
+-    return None
++def _pattern_cache_key(lengths_ft, spacings_ft, height_ft, freq_mhz, use_real_ground):
++    return (
++        _round_tuple(lengths_ft),
++        _round_tuple(spacings_ft),
++        round(float(height_ft), 6),
++        round(float(freq_mhz), 6),
++        bool(use_real_ground),
++    )
+ 
+ 
+-def _solve_nec_gain_at_point_once(lengths_ft, spacings_ft, height_ft, freq_mhz,
+-                                  phi_deg, elev_deg, ground_variant):
+-    theta_deg = 90.0 - float(elev_deg)
++def _solve_pattern_metrics_once(lengths_ft, spacings_ft, height_ft, freq_mhz, ground_variant):
+     nec = _build_nec_context(lengths_ft, spacings_ft, height_ft, freq_mhz, ground_variant)
+     try:
+-        if not _try_add_rp_card(nec, theta_deg, float(phi_deg)):
+-            return None
+-
+-        ret = necpp.nec_xq_card(nec, 0)
+-        if ret != 0:
+-            return None
+-
+-        return _try_get_gain_from_context(nec)
++        grid = _gain_grid_from_context(nec)
+     finally:
+         necpp.nec_delete(nec)
+ 
++    if grid is None:
++        return None
+ 
+-def solve_nec_gain_at_point(lengths_ft, spacings_ft, height_ft, freq_mhz, phi_deg, elev_deg,
+-                            use_real_ground=DEFAULT_USE_REAL_GROUND):
+-    key = _gain_cache_key(lengths_ft, spacings_ft, height_ft, freq_mhz, phi_deg, elev_deg, use_real_ground)
+-    if key in NEC_GAIN_CACHE:
+-        return NEC_GAIN_CACHE[key]
+-
+-    for ground_variant in _ground_variants(use_real_ground):
+-        try:
+-            g = _solve_nec_gain_at_point_once(
+-                lengths_ft, spacings_ft, height_ft, freq_mhz,
+-                phi_deg, elev_deg, ground_variant
+-            )
+-            if g is not None and np.isfinite(g):
+-                NEC_GAIN_CACHE[key] = float(g)
+-                return float(g)
+-        except Exception:
+-            continue
+-
+-    NEC_GAIN_CACHE[key] = None
+-    return None
+-
++    finite = grid[np.isfinite(grid)]
++    if finite.size == 0:
++        return None
+ 
+-def estimate_pattern_metrics(lengths_ft, spacings_ft, height_ft, freq_mhz, use_real_ground,
+-                             elev_samples_deg=(0.0, 5.0, 10.0, 15.0)):
+-    fwd_samples = []
+-    rear_samples = []
++    fwd_cols = _phi_indices_in_sector(_FWD_PHI_DEG, _FB_SECTOR_HALFWIDTH_DEG)
++    rear_cols = _phi_indices_in_sector(_REAR_PHI_DEG, _FB_SECTOR_HALFWIDTH_DEG)
+ 
+-    for elev in elev_samples_deg:
+-        gf = solve_nec_gain_at_point(lengths_ft, spacings_ft, height_ft, freq_mhz, 90.0, elev, use_real_ground)
+-        gr = solve_nec_gain_at_point(lengths_ft, spacings_ft, height_ft, freq_mhz, 270.0, elev, use_real_ground)
++    fwd_vals = grid[:, fwd_cols]
++    rear_vals = grid[:, rear_cols]
++    fwd_vals = fwd_vals[np.isfinite(fwd_vals)]
++    rear_vals = rear_vals[np.isfinite(rear_vals)]
++    if fwd_vals.size == 0 or rear_vals.size == 0:
++        return None
+ 
+-        if gf is None or gr is None:
+-            return np.nan, np.nan, np.nan
+-        if not (np.isfinite(gf) and np.isfinite(gr)):
+-            return np.nan, np.nan, np.nan
++    forward = float(np.max(fwd_vals))
++    rear = float(np.max(rear_vals))
++    return forward, rear, forward - rear
+ 
+-        fwd_samples.append(float(gf))
+-        rear_samples.append(float(gr))
+ 
+-    if not fwd_samples:
+-        return np.nan, np.nan, np.nan
++def estimate_pattern_metrics(lengths_ft, spacings_ft, height_ft, freq_mhz, use_real_ground,
++                             elev_samples_deg=None):
++    """Return (forward_gain_dbi, rear_gain_dbi, front_to_back_db) from a single
++    full upper-hemisphere NEC radiation-pattern solve.
++
++    Uses the requested ground model; if the installed necpp build cannot
++    produce a finite pattern for it, falls back real0 -> perfect -> free so the
++    optimizer always has gain / front-to-back to work with.  `elev_samples_deg`
++    is accepted for backwards compatibility but is no longer used.
++    """
++    key = _pattern_cache_key(lengths_ft, spacings_ft, height_ft, freq_mhz, use_real_ground)
++    if key in NEC_GAIN_CACHE:
++        return NEC_GAIN_CACHE[key]
+ 
+-    fwd = float(np.max(fwd_samples))
+-    rear = float(np.max(rear_samples))
+-    f2b = fwd - rear
+-    return fwd, rear, f2b
++    for ground_variant in _pattern_ground_variants(use_real_ground):
++        try:
++            res = _solve_pattern_metrics_once(
++                lengths_ft, spacings_ft, height_ft, freq_mhz, ground_variant
++            )
++        except Exception:
++            res = None
++        if res is not None and all(np.isfinite(v) for v in res):
++            NEC_GAIN_CACHE[key] = res
++            return res
++
++    fallback = (np.nan, np.nan, np.nan)
++    NEC_GAIN_CACHE[key] = fallback
++    return fallback
+ 
+ 
+ def probe_gain_support(use_real_ground, center_freq):
