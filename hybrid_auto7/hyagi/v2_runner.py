@@ -7,6 +7,19 @@ from . import v2_scorer
 INCH = 0.0254
 FT   = 0.3048
 
+# --- Tapered aluminum element model -----------------------------------------
+# Real elements are telescoping aluminum tubing: a fat 1.25" tube at the centre
+# stepping down to a thin 0.375" tip.  (OD inches, section length inches),
+# centre -> tip, per half element.  At a given element length the schedule is
+# consumed centre-outward and truncated, so a short element shows a fatter tip
+# and a long one exposes the thin tip tubing -- exactly how sliding the tip in
+# and out of the bigger tubes behaves on the bench.  Diameter strongly sets the
+# resonant length, which is why a uniform-wire model never matched real builds.
+TAPER_SCHEDULE = [(1.25, 36.0), (1.125, 36.0), (1.0, 36.0),
+                  (0.75, 24.0), (0.50, 24.0), (0.375, 16.0)]
+ALUMINUM_SIGMA = 2.5e7   # 6061-T6 conductivity, S/m (for NEC LD type-5 card)
+_SEG_TARGET_IN = 6.0     # target NEC segment length
+
 # ---------- SWR ----------
 def swr(R, X, Z0=50.0):
     num = (R - Z0)**2 + X**2
@@ -17,34 +30,78 @@ def swr(R, X, Z0=50.0):
     return (1.0 + rho) / (1.0 - rho)
 
 # ---------- NEC card builder ----------
-def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
-                   pattern=True):
-    """Build a NEC2 input deck.
+def _half_sections(half_len_m, taper):
+    """Return [(radius_m, length_m), ...] from centre to tip for one half
+    element of length half_len_m, consuming the taper schedule centre-outward
+    and truncating (or extending the thin tip) to hit the length."""
+    secs = []
+    remaining = half_len_m
+    for od_in, sec_in in taper:
+        if remaining <= 1e-9:
+            break
+        seglen = min(sec_in * INCH, remaining)
+        secs.append((od_in * INCH / 2.0, seglen))
+        remaining -= seglen
+    if remaining > 1e-9:               # element longer than schedule -> extend tip
+        secs.append((taper[-1][0] * INCH / 2.0, remaining))
+    if not secs:
+        secs = [(taper[0][0] * INCH / 2.0, max(half_len_m, 1e-3))]
+    return secs
 
+
+def _emit_element(out, tag, p, L, H, taper):
+    """Append GW cards for one stepped-diameter element centred on the y axis at
+    boom position p, height H. Returns (last_tag, feed_tag, feed_seg)."""
+    half = L / 2.0
+    secs = _half_sections(half, taper)
+    r0, l0 = secs[0]
+    nseg = max(3, int((2 * l0) / (_SEG_TARGET_IN * INCH))) | 1   # odd -> centre seg
+    tag += 1
+    out.append(f"GW {tag} {nseg} {p:.6f} {-l0:.6f} {H:.6f} {p:.6f} {l0:.6f} {H:.6f} {r0:.6f}")
+    feed_tag, feed_seg = tag, (nseg + 1) // 2
+    inner = l0
+    for (r, seglen) in secs[1:]:
+        ns = max(2, int(seglen / (_SEG_TARGET_IN * INCH)))
+        tag += 1
+        out.append(f"GW {tag} {ns} {p:.6f} {inner:.6f} {H:.6f} {p:.6f} {inner+seglen:.6f} {H:.6f} {r:.6f}")
+        tag += 1
+        out.append(f"GW {tag} {ns} {p:.6f} {-inner:.6f} {H:.6f} {p:.6f} {-(inner+seglen):.6f} {H:.6f} {r:.6f}")
+        inner += seglen
+    return tag, feed_tag, feed_seg
+
+
+def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
+                   pattern=True, taper=TAPER_SCHEDULE, conductor_sigma=ALUMINUM_SIGMA):
+    """Build a NEC2 input deck for the tapered aluminium hybrid.
+
+    taper=None reverts to a single uniform wire of wire_radius_in (legacy).
+    conductor_sigma adds an LD type-5 aluminium-loss card (None = lossless).
     pattern=True  -> full hemisphere RP (37x73) so gain / F/B can be read.
-    pattern=False -> a single-direction RP (cheap) that still forces nec2c to
-                     run the frequency loop and emit ANTENNA INPUT PARAMETERS,
-                     so SWR/impedance can be read ~3x faster (used by the
-                     wideband matcher's inner search loop).
+    pattern=False -> a cheap single-direction RP (~3x faster) for the SWR loop.
     """
     H = height_ft * FT
-    a = wire_radius_in * INCH
-    out = ["CM hybrid_auto7 v2", "CE"]
-    de_tag = None
-    de_segs = None
-    for tag, el in enumerate(elements, start=1):
+    out = ["CM hybrid_auto7 v2 (tapered Al)", "CE"]
+    de_feed_tag = None
+    de_feed_seg = None
+    tag = 0
+    for el in elements:
         p = float(el["position_in"]) * INCH
         L = float(el["length_in"]) * INCH
-        segs = max(11, (int(L / (10.0 * INCH))) | 1)
-        out.append(
-            f"GW {tag} {segs} {p:.6f} {-L/2:.6f} {H:.6f} {p:.6f} {L/2:.6f} {H:.6f} {a:.6f}"
-        )
+        if taper:
+            tag, ftag, fseg = _emit_element(out, tag, p, L, H, taper)
+        else:
+            a = wire_radius_in * INCH
+            segs = max(11, (int(L / (10.0 * INCH))) | 1)
+            tag += 1
+            out.append(f"GW {tag} {segs} {p:.6f} {-L/2:.6f} {H:.6f} {p:.6f} {L/2:.6f} {H:.6f} {a:.6f}")
+            ftag, fseg = tag, (segs + 1) // 2
         if el["name"].upper() == "DE":
-            de_tag = tag
-            de_segs = segs
-    if de_tag is None:
+            de_feed_tag, de_feed_seg = ftag, fseg
+    if de_feed_tag is None:
         raise ValueError("No DE element")
     out.append("GE -1")
+    if conductor_sigma:
+        out.append(f"LD 5 0 0 0 {conductor_sigma:.4E}")
     out.append("GN 2 0 0 0 13.0 0.005")
     f0 = freqs_mhz[0]
     if len(freqs_mhz) == 1:
@@ -52,8 +109,7 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
     else:
         step = (freqs_mhz[-1] - f0) / (len(freqs_mhz) - 1)
         out.append(f"FR 0 {len(freqs_mhz)} 0 0 {f0:.4f} {step:.4f}")
-    feed = (de_segs + 1) // 2
-    out.append(f"EX 0 {de_tag} {feed} 0 1.0 0.0")
+    out.append(f"EX 0 {de_feed_tag} {de_feed_seg} 0 1.0 0.0")
     if pattern:
         out.append("RP 0 37 73 1000 0 0 5 5")
     else:
@@ -222,6 +278,14 @@ def validate(elements, rules):
         smin = float(b.get("min_in", 0)); smax = float(b.get("max_in", 9999))
         if not (smin <= dist <= smax):
             return False, f"{pair} spacing {dist:.2f} outside [{smin},{smax}]"
+    # Physical rule: the XFRMR and COUPLER must stay SHORTER than the DE, or
+    # they take over the resonance and flip the pattern backwards.
+    de = by_name.get("DE")
+    if de is not None:
+        de_len = float(de["length_in"])
+        for nm in ("XFRMR", "COUPLER"):
+            if nm in by_name and float(by_name[nm]["length_in"]) >= de_len:
+                return False, f"{nm} length {float(by_name[nm]['length_in']):.2f} >= DE {de_len:.2f} (must be shorter)"
     return True, "ok"
 
 # SCORE_MODE_V1

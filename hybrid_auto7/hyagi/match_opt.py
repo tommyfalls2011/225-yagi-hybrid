@@ -93,17 +93,19 @@ def _apply(elements, vec, de_pos):
     e = copy.deepcopy(elements)
     de = _el(e, "DE")
     de["length_in"] = vec["de_len"]
+    # XFRMR / COUPLER must stay shorter than the DE (else the pattern reverses).
+    cap = vec["de_len"] - 1.0
     if "ref_len" in vec:
         ref = _el(e, "REF")
         ref["length_in"] = vec["ref_len"]
         ref["position_in"] = round(de_pos - vec["ref_gap"], 4)
     if "xf_len" in vec:
         xf = _el(e, "XFRMR")
-        xf["length_in"] = vec["xf_len"]
+        xf["length_in"] = min(vec["xf_len"], cap)
         xf["position_in"] = round(de_pos - vec["xf_gap"], 4)
     if "cp_len" in vec:
         cp = _el(e, "COUPLER")
-        cp["length_in"] = vec["cp_len"]
+        cp["length_in"] = min(vec["cp_len"], cap)
         cp["position_in"] = round(de_pos + vec["cp_gap"], 4)
     for key, val in vec.items():
         if key.endswith("_len") and key[:-4].upper().startswith("DIR"):
