@@ -26,6 +26,7 @@ PROC_PATH = ROOT / "data/procedures_v2.json"
 
 sys.path.insert(0, str(ROOT))
 from hyagi import v2_runner  # noqa: E402
+from hyagi import perf_report  # noqa: E402
 from hyagi.auto_learn import LearnConfig, run_learning  # noqa: E402
 
 
@@ -98,6 +99,8 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
 
     m = result["final_metrics"]
     band_max = m.get("band_max_swr", m.get("max_swr", 0))
+    with st.spinner("Building full performance report…"):
+        report = perf_report.analyze(result["final_geometry"], rules_run, height_ft=float(height_ft))
     st.session_state["al_result"] = {
         "geometry": result["final_geometry"],
         "band_max": band_max,
@@ -106,6 +109,7 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         "score": result["final_score"],
         "low": float(band_low), "high": float(band_high), "points": int(band_points),
         "height": float(height_ft), "elapsed": elapsed,
+        "report": report,
     }
 
 res = st.session_state.get("al_result")
@@ -123,6 +127,41 @@ if res:
         import pandas as pd
         df = pd.DataFrame({"freq_MHz": [c[0] for c in curve], "SWR": [c[3] for c in curve]})
         st.line_chart(df, x="freq_MHz", y="SWR", height=240)
+
+    rep = res.get("report") or {}
+    if rep and "error" not in rep:
+        def _bw(b):
+            return f"{b[0]:.3f}–{b[1]:.3f} MHz  ({b[2]:.0f} kHz)" if b else "— (never ≤ this)"
+        st.markdown("### Full performance report")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Forward gain", f"{rep['gain_dbi']:.2f} dBi", f"{rep['gain_dbd']:.2f} dBd")
+        k2.metric("Front / Back", f"{rep['fb_db']:.2f} dB", f"F/R {rep['fr_db']:.2f} dB")
+        k3.metric("Take-off angle", f"{rep['takeoff_deg']:.1f}°", f"@ {rep['height_ft']:.0f} ft")
+        k4.metric("Band-max SWR", f"{rep['band_max_swr']:.3f}", f"min {rep['min_swr']:.3f} @ {rep['min_swr_mhz']:.3f} MHz")
+
+        rows = [
+            ("Gain over real ground", f"{rep['gain_dbi']:.2f} dBi  ({rep['gain_dbd']:.2f} dBd)"),
+            ("Gain in free space", f"{rep['gain_free_space_dbi']:.2f} dBi"),
+            ("Ground-reflection gain", f"+{rep['ground_gain_db']:.2f} dB"),
+            ("Power multiplier", f"{rep['power_mult_isotropic']:.1f}× isotropic   ·   {rep['power_mult_dipole']:.2f}× a dipole"),
+            ("Front-to-back / front-to-rear", f"{rep['fb_db']:.2f} dB  /  {rep['fr_db']:.2f} dB"),
+            ("Azimuth beamwidth (−3 dB)", f"{rep['az_beamwidth_deg']}°" if rep['az_beamwidth_deg'] else "—"),
+            ("Elevation beamwidth (−3 dB)", f"{rep['el_beamwidth_deg']}°" if rep['el_beamwidth_deg'] else "—"),
+            ("Take-off (peak elevation) angle", f"{rep['takeoff_deg']:.1f}°"),
+            ("Radiation efficiency", f"{rep['efficiency_pct']:.1f}%  (lossless-wire model)" if rep['efficiency_pct'] is not None else "—"),
+            ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {rep['boom_in']:.1f} in ({rep['boom_in']/12:.1f} ft)"),
+            ("Resonant (min-SWR) freq", f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
+            ("In-band max SWR", f"{rep['band_max_swr']:.3f}:1  ({rep['band_low_mhz']:.3f}–{rep['band_high_mhz']:.3f} MHz)"),
+            ("Bandwidth ≤ 1.2:1", _bw(rep['bw_swr_1p2'])),
+            ("Bandwidth ≤ 1.5:1", _bw(rep['bw_swr_1p5'])),
+            ("Bandwidth ≤ 2.0:1", _bw(rep['bw_swr_2p0'])),
+        ]
+        md = "| Metric | Value |\n|---|---|\n" + "\n".join(f"| {a} | {b} |" for a, b in rows)
+        st.markdown(md)
+        st.download_button("Download report (JSON)",
+                           data=json.dumps(rep, indent=2),
+                           file_name="auto_learn_report.json",
+                           key="al_dl_report")
 
     st.markdown("**Tuned geometry**")
     for e in res["geometry"]:
