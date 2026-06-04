@@ -79,7 +79,39 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
 - DB map now: yagi_history.db = OLD hybrid data (misnamed, untouched) ; auto7_history.db = hybrid auto_learn ;
   yagi_opt_history.db = NEW clean Yagi optimizer history (self-learning).
 
+## WIDEBAND MATCHER + SWR PLATEAU FIX (2026-06-03)
+- USER TARGET CONFIRMED: wideband SWR <= 1.2 across the FREEBAND 26.665-27.855 MHz
+  (not just the 40-ch 26.965-27.405). rules_v2.json global low/high updated to freeband.
+- ROOT CAUSE of the 1.334 plateau: the old per-element greedy procedure (cell_tune_3x)
+  got trapped in a local minimum AND it was only scoring the narrower 40-ch band, so the
+  steep band-edge SWR rise on the freeband was never fought. Raw current geometry over the
+  freeband peaked at SWR 3.44 (matched too low, high-Q, R-vs-freq slope).
+- FIX (delivered as /app/wideband_matcher.patch, applies cleanly on clean HEAD):
+  * v2_runner.build_nec_card(pattern=) + new v2_runner.band_swr_curve() = fast SWR-only eval
+    (single-direction RP, ~0.7s vs 2.1s; ~3x faster) for the inner search loop.
+  * NEW hyagi/match_opt.py = coordinate-descent wideband matcher. Objective = WORST in-band
+    SWR (+tiny avg tiebreak). Tunes DE len + REF/XFRMR/COUPLER lengths & DE-relative spacings
+    + director lengths, multi-resolution steps (8->0.25 in), rounds-to-convergence, optional
+    perturbation restarts. Then _polish_gain() recovers gain/F-B on REF+director lengths under
+    the FULL pattern, rejecting any move that lifts band-max SWR above target.
+  * auto_learn.run_learning() now uses the matcher (cfg.use_matcher=True default) instead of the
+    greedy procedure; warm-start + DB saving (runs/elements/freq_results) + final pattern eval kept.
+  * auto_learn_run.py: --band-low/--band-high/--no-matcher/--no-polish flags.
+  * NEW pages/8_Auto_Learn.py = Streamlit "Auto-Learn" page (band, target, height, points,
+    restarts, polish; live log; SWR curve chart; adopt/download). Wired to the same engine.
+  * diag_sweep.py = standalone band-SWR diagnostic tool.
+- VALIDATED (real ground, 30 ft, freeband 26.665-27.855, 21 pts):
+  baseline band-max SWR 3.44 -> 1.196 (<=1.2 target MET), gain 14.73 dBi, F/B 12.81 dB,
+  center R=57.7 X=5.5. SWR-only base pass alone hits 1.067 (then gain polish trades back up
+  to the 1.20 ceiling for max gain). DB saved 2 runs/16 els/42 freq pts; warm-start from DB
+  confirmed across runs and live in the UI. Patch re-verified on a clean checkout.
+- DELIVERY: /app/wideband_matcher.patch (git apply). Recommend "Save to Github" to avoid the
+  large-paste corruption the user hit before. Do NOT direct-push (user revoked PAT).
+
 ## NEXT
-- Streamlit Auto-Learn button for hybrid (pending user 1a/1b choice).
+- Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
+  ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
+  compare in v2_runner still TODO to document).
+- Yagi UI slider 2-18 vs seeder N<=12 (P2): cap UI to 12 or extend seeding.
 - Optionally rescue 1071 hybrid runs from misnamed yagi_history.db.
-- Seeder supports N=2..12; UI slider goes to 18 - cap UI to 12 or extend seeding.
+- Yagi opt_7el_yagi3.py self-learning (deferred per user; hybrid first).
