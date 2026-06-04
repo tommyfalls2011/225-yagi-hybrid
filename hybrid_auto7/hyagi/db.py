@@ -148,6 +148,23 @@ def init_db(con):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_move_history_project ON move_history(project_name)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_move_history_stage ON move_history(stage)")
 
+    # Every wideband-matcher candidate (good OR bad) is logged here, tagged with
+    # the design signature (taper + band + height + element count), so future
+    # runs can warm-start each parameter from its best-known value and steer
+    # away from values that only ever made SWR worse.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS learned_moves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_utc TEXT NOT NULL,
+            signature TEXT NOT NULL,
+            dof TEXT NOT NULL,
+            value REAL NOT NULL,
+            band_max_swr REAL NOT NULL,
+            accepted INTEGER NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_learned_sig ON learned_moves(signature, dof)")
+
 
 def existing_run(design_key):
     with get_connection() as con:

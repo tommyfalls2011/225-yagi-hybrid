@@ -1,24 +1,54 @@
 """hybrid_auto7 v2 runner — executes procedures against current geometry.
 Calls nec2c directly. Validates geometry against rules. Scores with v2_scorer.
 """
-import subprocess, math, re, pathlib, copy, tempfile, os
+import subprocess, math, re, pathlib, copy, tempfile, os, json
 from . import v2_scorer
 
 INCH = 0.0254
 FT   = 0.3048
 
 # --- Tapered aluminum element model -----------------------------------------
-# Real elements are telescoping aluminum tubing: a fat 1.25" tube at the centre
-# stepping down to a thin 0.375" tip.  (OD inches, section length inches),
-# centre -> tip, per half element.  At a given element length the schedule is
-# consumed centre-outward and truncated, so a short element shows a fatter tip
-# and a long one exposes the thin tip tubing -- exactly how sliding the tip in
-# and out of the bigger tubes behaves on the bench.  Diameter strongly sets the
+# Real elements are telescoping aluminum tubing: a fat tube at the centre
+# stepping down to a thin tip.  (OD inches, section length inches), centre ->
+# tip, per half element.  At a given element length the schedule is consumed
+# centre-outward and truncated, so a short element shows a fatter tip and a
+# long one exposes the thin tip tubing -- exactly how sliding the tip in and
+# out of the bigger tubes behaves on the bench.  Diameter strongly sets the
 # resonant length, which is why a uniform-wire model never matched real builds.
-TAPER_SCHEDULE = [(1.25, 36.0), (1.125, 36.0), (1.0, 36.0),
-                  (0.75, 24.0), (0.50, 24.0), (0.375, 16.0)]
+#
+# This is only the FALLBACK default.  The active schedule is read from
+# data/taper_v2.json (editable in the Auto-Learn UI) so every antenna can use
+# its own tubing sizes.  Use a big section length (e.g. 999) for the piece that
+# runs all the way to the tip.
+TAPER_SCHEDULE = [(0.625, 36.0), (0.50, 999.0)]
 ALUMINUM_SIGMA = 2.5e7   # 6061-T6 conductivity, S/m (for NEC LD type-5 card)
 _SEG_TARGET_IN = 6.0     # target NEC segment length
+_DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
+
+
+def get_active_taper():
+    """Active element taper schedule from data/taper_v2.json, else the default.
+    Returns a list of (OD_in, section_len_in) centre -> tip."""
+    p = _DATA_DIR / "taper_v2.json"
+    try:
+        if p.exists():
+            d = json.loads(p.read_text())
+            sch = d.get("default") or d.get("schedule")
+            if sch:
+                return [(float(od), float(L)) for od, L in sch]
+    except Exception:
+        pass
+    return TAPER_SCHEDULE
+
+
+def taper_signature(taper=None):
+    """Short stable string identifying a taper, for matching learned runs."""
+    t = taper if taper not in (None, "auto") else get_active_taper()
+    if not t:
+        return "uniform"
+    return ";".join(f"{od:g}x{L:g}" for od, L in t)
+
+
 
 # ---------- SWR ----------
 def swr(R, X, Z0=50.0):
@@ -71,14 +101,18 @@ def _emit_element(out, tag, p, L, H, taper):
 
 
 def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
-                   pattern=True, taper=TAPER_SCHEDULE, conductor_sigma=ALUMINUM_SIGMA):
+                   pattern=True, taper="auto", conductor_sigma=ALUMINUM_SIGMA):
     """Build a NEC2 input deck for the tapered aluminium hybrid.
 
-    taper=None reverts to a single uniform wire of wire_radius_in (legacy).
+    taper="auto" -> read the active schedule from data/taper_v2.json.
+    taper=list   -> use that [(OD_in, len_in), ...] schedule.
+    taper=None/[] -> single uniform wire of wire_radius_in (legacy).
     conductor_sigma adds an LD type-5 aluminium-loss card (None = lossless).
     pattern=True  -> full hemisphere RP (37x73) so gain / F/B can be read.
     pattern=False -> a cheap single-direction RP (~3x faster) for the SWR loop.
     """
+    if taper == "auto":
+        taper = get_active_taper()
     H = height_ft * FT
     out = ["CM hybrid_auto7 v2 (tapered Al)", "CE"]
     de_feed_tag = None

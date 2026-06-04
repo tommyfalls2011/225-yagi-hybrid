@@ -59,6 +59,34 @@ with c2:
 
 polish = st.checkbox("Recover gain / F-B after hitting SWR target", value=True, key="al_polish")
 
+# ---- Element taper (tubing schedule) --------------------------------------
+TAPER_PATH = ROOT / "data/taper_v2.json"
+with st.expander("⚙️ Element taper / tubing schedule (aluminum)", expanded=False):
+    st.caption("One tube per line: `OD_inches, section_length_inches`, from element "
+               "CENTRE out to the TIP. Use a big length (e.g. 999) for the piece that "
+               "runs to the tip. Example for this antenna: `0.625, 36` then `0.5, 999`.")
+    try:
+        _cur_taper = json.loads(TAPER_PATH.read_text()).get("default", [[0.625, 36.0], [0.5, 999.0]])
+    except Exception:
+        _cur_taper = [[0.625, 36.0], [0.5, 999.0]]
+    _taper_text = "\n".join(f"{od}, {L}" for od, L in _cur_taper)
+    new_taper_text = st.text_area("Taper sections", value=_taper_text, key="al_taper", height=120)
+    if st.button("Save taper", key="al_save_taper"):
+        sched = []
+        for ln in new_taper_text.splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            parts = [p for p in ln.replace("\t", ",").split(",") if p.strip()]
+            if len(parts) >= 2:
+                sched.append([float(parts[0]), float(parts[1])])
+        if sched:
+            TAPER_PATH.write_text(json.dumps({"default": sched}, indent=2))
+            st.cache_data.clear()
+            st.success(f"Saved taper: {sched}  (re-run AUTO-LEARN to re-tune for it)")
+        else:
+            st.error("Could not parse any 'OD, length' lines.")
+
 st.markdown("**Starting geometry (current)**")
 gcols = st.columns(min(4, len(geo["elements"])) or 1)
 for i, e in enumerate(geo["elements"]):
@@ -178,3 +206,38 @@ if res:
                            data=json.dumps({"elements": res["geometry"]}, indent=2),
                            file_name="auto_learn_geometry.json",
                            use_container_width=True, key="al_dl")
+
+# ---- Learning memory (what it has learned for THIS design) -----------------
+st.markdown("---")
+st.markdown("### 🧠 Learning memory")
+st.caption("Every candidate move (good AND bad) is saved per design signature "
+           "(taper + band + height + element count). New runs warm-start each "
+           "parameter from its best-known value and steer away from bad ones.")
+try:
+    import sqlite3
+    from hyagi import v2_runner as _vr
+    DB = ROOT / "data/auto7_history.db"
+    con = sqlite3.connect(str(DB))
+    sig_like = f"{_vr.taper_signature()}|%h{float(height_ft):.0f}|%"
+    total = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ?", (sig_like,)).fetchone()[0]
+    acc = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ? AND accepted=1", (sig_like,)).fetchone()[0]
+    c1, c2 = st.columns(2)
+    c1.metric("Moves remembered", total)
+    c2.metric("Good (accepted) moves", acc)
+    rows = con.execute("""
+        SELECT dof, value, band_max_swr FROM learned_moves
+        WHERE signature LIKE ? AND accepted=1
+          AND band_max_swr=(SELECT MIN(band_max_swr) FROM learned_moves x
+                            WHERE x.signature=learned_moves.signature
+                              AND x.dof=learned_moves.dof AND x.accepted=1)
+        GROUP BY dof ORDER BY dof
+    """, (sig_like,)).fetchall()
+    con.close()
+    if rows:
+        md = "| Parameter | Best value | gave band-max SWR |\n|---|---|---|\n" + \
+             "\n".join(f"| {d} | {v:.2f} | {s:.3f} |" for d, v, s in rows)
+        st.markdown(md)
+    else:
+        st.info("No learned moves yet for this taper/band/height — run AUTO-LEARN to start the memory.")
+except Exception as e:
+    st.caption(f"(learning memory unavailable: {e})")

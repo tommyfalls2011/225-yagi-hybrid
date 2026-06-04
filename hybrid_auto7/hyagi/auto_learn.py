@@ -330,7 +330,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
         log_fn(f"[gen 0] baseline  score={base_score:+.1f}  band_max_swr={band_max:.3f}  "
                f"gain={base.get('gain_dbi',0):.2f}  fb={base.get('fb_db',0):.2f}")
 
-        if band_max <= cfg.target_max_swr:
+        if band_max <= cfg.target_max_swr and not cfg.use_matcher:
             log_fn(f"[done] baseline already meets SWR<= {cfg.target_max_swr} across band.")
             return _result(best_geo, best_metrics, best_score, 0)
 
@@ -342,12 +342,21 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
         # -------------------------------------------------------------------
         if cfg.use_matcher:
             log_fn(f"\n[matcher] wideband coordinate descent, target SWR<= {cfg.target_max_swr}")
+            sig = _design_signature(current, cfg, f_low, f_high)
+            learned_start = _learned_dof_starts(con, sig)
+            if learned_start:
+                log_fn(f"[learn] {len(learned_start)} parameter(s) recalled from "
+                       f"{_moves_count(con, sig)} past moves for this design")
+            move_log = []
             new_geo, band_max, curve = match_opt.optimize(
                 current, rules, height_ft=cfg.height_ft,
                 target_swr=cfg.target_max_swr, points=cfg.band_sweep_points,
                 restarts=max(1, cfg.max_generations),
                 polish_gain=cfg.polish_gain, log_fn=log_fn,
+                learned_start=learned_start, move_log=move_log,
             )
+            _save_moves(con, sig, move_log)
+            log_fn(f"[learn] logged {len(move_log)} moves (good & bad) to the database")
             metrics = v2_runner.evaluate(new_geo, rules, height_ft=cfg.height_ft)
             if "error" in metrics:
                 log_fn(f"[matcher] final eval failed: {metrics['error']}")
@@ -436,6 +445,47 @@ def _result(geo, metrics, score, generations):
         "final_score": score,
         "generations": generations,
     }
+
+
+def _design_signature(elements, cfg, f_low, f_high):
+    """Stable key grouping runs of the same antenna so learning only reuses
+    moves from a comparable design (same taper, band, height, element count)."""
+    return (f"{v2_runner.taper_signature()}|{f_low:.3f}-{f_high:.3f}"
+            f"|h{float(cfg.height_ft):.0f}|n{len(elements)}")
+
+
+def _moves_count(con, sig):
+    row = con.execute("SELECT COUNT(*) AS c FROM learned_moves WHERE signature=?", (sig,)).fetchone()
+    return row["c"] if row else 0
+
+
+def _learned_dof_starts(con, sig):
+    """Best-known value per parameter for this design: the value that produced
+    the lowest band-max SWR across all past accepted moves."""
+    rows = con.execute("""
+        SELECT dof, value FROM learned_moves
+        WHERE signature=? AND accepted=1
+          AND band_max_swr = (
+              SELECT MIN(band_max_swr) FROM learned_moves lm2
+              WHERE lm2.signature=learned_moves.signature
+                AND lm2.dof=learned_moves.dof AND lm2.accepted=1
+          )
+        GROUP BY dof
+    """, (sig,)).fetchall()
+    return {r["dof"]: r["value"] for r in rows}
+
+
+def _save_moves(con, sig, move_log):
+    if not move_log:
+        return
+    ts = now_utc()
+    con.executemany(
+        "INSERT INTO learned_moves (created_utc, signature, dof, value, band_max_swr, accepted) "
+        "VALUES (?,?,?,?,?,?)",
+        [(ts, sig, m["dof"], float(m["value"]), float(m["band_max_swr"]), int(m["accepted"]))
+         for m in move_log],
+    )
+    con.commit()
 
 
 def _set_swr_profile(profile_key):
