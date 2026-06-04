@@ -46,10 +46,10 @@ index 83a08e0..93516ab 100644
    }
 diff --git a/hybrid_auto7/diag_sweep.py b/hybrid_auto7/diag_sweep.py
 new file mode 100644
-index 0000000..e856b9b
+index 0000000..2e92fa9
 --- /dev/null
 +++ b/hybrid_auto7/diag_sweep.py
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,63 @@
 +#!/usr/bin/env python3
 +"""Diagnostic: sweep current geometry across an arbitrary band and print SWR curve."""
 +import sys, json, argparse
@@ -88,7 +88,28 @@ index 0000000..e856b9b
 +        print(f"{f:9.3f} {R:8.2f} {X:8.2f} {s:7.3f}{flag}")
 +        if s>maxs: maxs=s; worst=(f,s)
 +    print(f"\nMAX SWR {maxs:.3f} at {worst[0]:.3f} MHz across {args.low}-{args.high}")
-+    print(f"gain peak {max(t[2] for t in pat):.2f} dBi" if pat else "no pattern")
++    print(f"gain peak (over real ground) {max(t[2] for t in pat):.2f} dBi" if pat else "no pattern")
++
++    # --- Gain realism check: free-space vs over-ground (Issue 2) ---
++    # Over real ground the forward lobe gets up to ~6 dB of ground-reflection
++    # gain on top of the free-space figure, so ~14-15 dBi over ground for an
++    # 8-element array (free-space ~12-13 dBi) is physically realistic.
++    fc = 0.5 * (args.low + args.high)
++    nec_g = v2_runner.build_nec_card(els, [fc], height_ft=args.height_ft, pattern=True)
++    nec_fs = nec_g.replace("GN 2 0 0 0 13.0 0.005\n", "")  # drop ground card
++    def _peak_gain(card):
++        with tempfile.NamedTemporaryFile("w", suffix=".nec", delete=False) as fh:
++            fh.write(card); pp = fh.name
++        oo = pp.replace(".nec", ".out")
++        subprocess.run(["nec2c","-i",pp,"-o",oo], capture_output=True, text=True, timeout=120)
++        t = Path(oo).read_text(); os.unlink(pp); os.unlink(oo)
++        _i, p2 = v2_runner.parse_nec_output(t)
++        return max((x[2] for x in p2), default=float("nan"))
++    g_fs = _peak_gain(nec_fs)
++    g_gnd = _peak_gain(nec_g)
++    print(f"\n[gain realism @ {fc:.3f} MHz]  free-space {g_fs:.2f} dBi  |  "
++          f"over real ground {g_gnd:.2f} dBi  |  ground delta {g_gnd-g_fs:+.2f} dB "
++          f"(<= ~6 dB expected)")
 +
 +if __name__ == "__main__":
 +    main()
