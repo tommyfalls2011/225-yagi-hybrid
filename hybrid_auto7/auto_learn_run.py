@@ -54,9 +54,17 @@ def main():
     ap.add_argument("--patience", type=int, default=3, help="Stop after N gens with no improvement")
     ap.add_argument("--height-ft", type=float, default=30.0)
     ap.add_argument("--band-points", type=int, default=21, help="Fine band sweep points")
+    ap.add_argument("--band-low", type=float, default=None, help="Override band low MHz (e.g. 26.665 freeband)")
+    ap.add_argument("--band-high", type=float, default=None, help="Override band high MHz (e.g. 27.855 freeband)")
+    ap.add_argument("--no-matcher", action="store_true", help="Use the legacy greedy procedure instead of the wideband matcher")
+    ap.add_argument("--no-polish", action="store_true", help="Skip the gain/F-B recovery phase after hitting the SWR target")
     args = ap.parse_args()
 
     rules = _load("rules_v2.json")
+    if args.band_low is not None:
+        rules["global"]["freq_mhz_low"] = args.band_low
+    if args.band_high is not None:
+        rules["global"]["freq_mhz_high"] = args.band_high
     minis = _load("mini_tunes_v2.json")
     procs = _load("procedures_v2.json")
     procedure = next((p for p in procs if p["name"] == args.procedure), None)
@@ -73,6 +81,8 @@ def main():
         band_sweep_points=args.band_points,
         max_generations=args.max_generations,
         patience=args.patience,
+        use_matcher=not args.no_matcher,
+        polish_gain=not args.no_polish,
     )
 
     print(f"Self-learning '{proj_name}' with procedure '{args.procedure}'")

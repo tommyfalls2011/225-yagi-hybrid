@@ -80,8 +80,8 @@
   },
   "global": {
     "freq_mhz_center": 27.195,
-    "freq_mhz_low": 26.965,
-    "freq_mhz_high": 27.405,
+    "freq_mhz_low": 26.665,
+    "freq_mhz_high": 27.855,
     "max_boom_ft": 70.0,
     "min_boom_ft": 8.0
   }

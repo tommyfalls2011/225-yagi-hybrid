@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from . import v2_runner, v2_scorer
+from . import v2_runner, v2_scorer, match_opt
 from .db import connect, now_utc
 from .paths import DATA_DIR, ensure_dirs
 
@@ -53,6 +53,8 @@ class LearnConfig:
     narrow_window_in: float = 3.0     # learning: +/- window around best value
     narrow_step_in: float = 0.25      # learning: finer step when narrowing
     db_path: str | None = None        # None -> default auto7_history.db
+    use_matcher: bool = True          # True -> coordinate-descent wideband matcher
+    polish_gain: bool = True          # recover gain/F-B after hitting SWR target
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +333,38 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
         if band_max <= cfg.target_max_swr:
             log_fn(f"[done] baseline already meets SWR<= {cfg.target_max_swr} across band.")
             return _result(best_geo, best_metrics, best_score, 0)
+
+        # -------------------------------------------------------------------
+        # Wideband coordinate-descent matcher (default).  Minimises the WORST
+        # in-band SWR (the user's real objective) using the fast SWR-only
+        # evaluator, then recovers gain/F-B while holding the match.  This
+        # replaces the old greedy single-element procedure that plateaued.
+        # -------------------------------------------------------------------
+        if cfg.use_matcher:
+            log_fn(f"\n[matcher] wideband coordinate descent, target SWR<= {cfg.target_max_swr}")
+            new_geo, band_max, curve = match_opt.optimize(
+                current, rules, height_ft=cfg.height_ft,
+                target_swr=cfg.target_max_swr, points=cfg.band_sweep_points,
+                restarts=max(1, cfg.max_generations),
+                polish_gain=cfg.polish_gain, log_fn=log_fn,
+            )
+            metrics = v2_runner.evaluate(new_geo, rules, height_ft=cfg.height_ft)
+            if "error" in metrics:
+                log_fn(f"[matcher] final eval failed: {metrics['error']}")
+                return _result(best_geo, best_metrics, best_score, 0)
+            metrics = dict(metrics, band_max_swr=band_max)
+            score = v2_scorer.score(**metrics)
+            save_generation(con, cfg, 1, "wideband_match", new_geo, metrics, curve, f_step)
+            log_fn(f"\n[matcher] done  band_max_swr={band_max:.3f}  "
+                   f"gain={metrics.get('gain_dbi',0):.2f}  fb={metrics.get('fb_db',0):.2f}  "
+                   f"score={score:+.1f}")
+            if band_max < best_metrics.get("band_max_swr", 99.0) - 1e-6 or band_max <= cfg.target_max_swr:
+                best_geo, best_metrics, best_score = copy.deepcopy(new_geo), metrics, score
+            if band_max <= cfg.target_max_swr:
+                log_fn(f"[done] reached SWR <= {cfg.target_max_swr} across the band.")
+            else:
+                log_fn(f"[done] best achievable band_max_swr={band_max:.3f} (target {cfg.target_max_swr}).")
+            return _result(best_geo, best_metrics, best_score, 1)
 
         stale = 0
         for gen in range(1, cfg.max_generations + 1):

@@ -17,7 +17,16 @@ def swr(R, X, Z0=50.0):
     return (1.0 + rho) / (1.0 - rho)
 
 # ---------- NEC card builder ----------
-def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25):
+def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
+                   pattern=True):
+    """Build a NEC2 input deck.
+
+    pattern=True  -> full hemisphere RP (37x73) so gain / F/B can be read.
+    pattern=False -> a single-direction RP (cheap) that still forces nec2c to
+                     run the frequency loop and emit ANTENNA INPUT PARAMETERS,
+                     so SWR/impedance can be read ~3x faster (used by the
+                     wideband matcher's inner search loop).
+    """
     H = height_ft * FT
     a = wire_radius_in * INCH
     out = ["CM hybrid_auto7 v2", "CE"]
@@ -45,7 +54,10 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25):
         out.append(f"FR 0 {len(freqs_mhz)} 0 0 {f0:.4f} {step:.4f}")
     feed = (de_segs + 1) // 2
     out.append(f"EX 0 {de_tag} {feed} 0 1.0 0.0")
-    out.append("RP 0 37 73 1000 0 0 5 5")
+    if pattern:
+        out.append("RP 0 37 73 1000 0 0 5 5")
+    else:
+        out.append("RP 0 1 1 1000 90 0 1 1")
     out.append("EN")
     return "\n".join(out) + "\n"
 
@@ -83,6 +95,44 @@ def parse_nec_output(text):
                 except ValueError:
                     pass
     return impedances, pattern
+
+# ---------- Fast SWR-only band evaluator (no radiation pattern) ----------
+def band_swr_curve(elements, f_low, f_high, points, height_ft=30.0):
+    """Fast band sweep returning (curve, max_swr, avg_swr) using a
+    single-direction RP (no full pattern). ~3x faster than evaluate(); used by
+    the wideband matcher's inner loop where only SWR matters."""
+    points = max(2, int(points))
+    freqs = [f_low + i * (f_high - f_low) / (points - 1) for i in range(points)]
+    try:
+        nec = build_nec_card(elements, freqs, height_ft=height_ft, pattern=False)
+    except Exception:
+        return [], 99.0, 99.0
+    with tempfile.NamedTemporaryFile("w", suffix=".nec", delete=False) as f:
+        f.write(nec); nec_path = f.name
+    out_path = nec_path.replace(".nec", ".out")
+    try:
+        try:
+            subprocess.run(["nec2c", "-i", nec_path, "-o", out_path],
+                           capture_output=True, text=True, timeout=60)
+        except Exception:
+            return [], 99.0, 99.0
+        if not pathlib.Path(out_path).exists():
+            return [], 99.0, 99.0
+        text = pathlib.Path(out_path).read_text()
+    finally:
+        for p in (nec_path, out_path):
+            try: os.unlink(p)
+            except Exception: pass
+    impedances, _ = parse_nec_output(text)
+    if not impedances:
+        return [], 99.0, 99.0
+    curve = []
+    for i, (R, X) in enumerate(impedances):
+        fz = freqs[i] if i < len(freqs) else freqs[-1]
+        curve.append((round(fz, 4), float(R), float(X), float(swr(R, X))))
+    swrs = [c[3] for c in curve]
+    return curve, max(swrs), sum(swrs) / len(swrs)
+
 
 # ---------- Evaluator ----------
 # Number of frequency points the scorer samples across the band.  Default 5
