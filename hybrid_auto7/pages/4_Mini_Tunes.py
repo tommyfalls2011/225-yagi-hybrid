@@ -10,6 +10,7 @@ st.caption("Reusable tune primitives. Single-element ones move ONE element; GROU
 
 PATH       = pathlib.Path.home() / "scripts/hybrid_auto7/data/mini_tunes_v2.json"
 RULES_PATH = pathlib.Path.home() / "scripts/hybrid_auto7/data/rules_v2.json"
+GEO_PATH   = pathlib.Path.home() / "scripts/hybrid_auto7/data/current_geometry_v2.json"
 
 @st.cache_data(ttl=2)
 def load():
@@ -19,9 +20,25 @@ def load():
 def load_rules():
     return json.loads(RULES_PATH.read_text())
 
+@st.cache_data(ttl=2)
+def load_geo_names():
+    try:
+        return [e["name"] for e in json.loads(GEO_PATH.read_text())["elements"]]
+    except Exception:
+        return []
+
 mts   = load()
 rules = load_rules()
-elements_list = list(rules["elements"].keys())
+# Element roster is NOT hardcoded to the rules file: it follows the geometry you
+# build (Auto-Learn -> Build geometry, 0-14 directors) and always offers the full
+# hybrid roster up to 18 elements (REF + XFRMR + DE + COUPLER + DIR1..DIR14).
+_geo_names = load_geo_names()
+_full_roster = ["REF", "XFRMR", "DE", "COUPLER"] + [f"DIR{i}" for i in range(1, 15)]
+elements_list = list(dict.fromkeys(_geo_names + _full_roster))
+st.caption(f"Element roster: {len(elements_list)} elements available "
+           f"(current geometry has {len(_geo_names) or '—'}). "
+           "Set the element count on **Auto-Learn → Build geometry**. "
+           "A mini-tune that targets an element not in the loaded geometry is skipped automatically.")
 
 TYPES = {
     "sweep_length":   "Sweep ONE element length across [start..stop] step",
