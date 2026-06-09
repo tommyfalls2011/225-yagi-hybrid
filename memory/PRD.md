@@ -108,6 +108,23 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
 - DELIVERY: /app/wideband_matcher.patch (git apply). Recommend "Save to Github" to avoid the
   large-paste corruption the user hit before. Do NOT direct-push (user revoked PAT).
 
+## SMART GROUP-MATCH LOOPING PROCEDURE (2026-06-09)
+- Added `smart_group_match_4x` to data/procedures_v2.json: one-click looping
+  Group-Match methodology per user's spoken sequence (place cell -> place ref ->
+  move cell -> set DIR1-3 -> slide dirs for best return loss/X -> move cell+dirs ->
+  retune DE resonance -> recover loss on dir lengths). `repeat: 4`,
+  `repeat_min_improve: 0.3` (auto-stops when a pass no longer improves composite).
+- Steps map to existing mini-tunes (sweep_XFRMR/COUPLER_pos_wide, nudge/tune REF,
+  group_cell_move, tune_DIR1-3 pos/len, window2_dirs_move (match mode),
+  all_dirs_move, tune_DE_length_resonance, window2_dirs_length).
+- run_procedure loop support (repeat/repeat_min_improve) already in v2_runner.
+- TESTS: tests/test_smart_group_match.py (3 passing) — JSON valid, all 16 steps
+  resolve, repeat loop executes + early-stops. Smoke-ran the group/window steps
+  end-to-end on real geometry (nec2c) OK.
+- PENDING (user deferred): P1 delete duplicate UI pages 6_Run.py/7_Learning.py
+  (keep 8_Auto_Learn.py); P2 remove git junk blobs `datetime` (~55MB) & `re`
+  (~13MB) + empty stray files. User confirmed PAT is valid (not revoked).
+
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
   ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
