@@ -65,5 +65,30 @@
       "tune_REF_length"
     ],
     "notes": ""
+  },
+  {
+    "name": "smart_group_match_4x",
+    "description": "One-click looping Group-Match methodology. Places the driven cell, places the reflector, moves the cell, sets DIR1-3, slides the directors for best return loss / X=0, moves cell+directors together, retunes DE resonance, then recovers loss on the director lengths. Repeats the whole sequence up to 4x and auto-stops when a pass no longer improves the composite score.",
+    "repeat": 4,
+    "repeat_min_improve": 0.3,
+    "steps": [
+      "sweep_XFRMR_pos_wide",
+      "sweep_COUPLER_pos_wide",
+      "nudge_REF_position",
+      "tune_REF_length",
+      "group_cell_move",
+      "tune_DIR1_position",
+      "tune_DIR1_length",
+      "tune_DIR2_position",
+      "tune_DIR2_length",
+      "tune_DIR3_position",
+      "tune_DIR3_length",
+      "window2_dirs_move",
+      "group_cell_move",
+      "all_dirs_move",
+      "tune_DE_length_resonance",
+      "window2_dirs_length"
+    ],
+    "notes": "Uses repeat/repeat_min_improve handled by v2_runner.run_procedure. window2_dirs_move and group moves use 'match' score_mode (drives SWR->1, X->0); DE uses resonance mode."
   }
 ]

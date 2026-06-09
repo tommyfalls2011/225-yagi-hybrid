@@ -518,20 +518,38 @@ def run_procedure(proc, minis_by_name, elements, rules, log_fn=None):
         log_fn("TARGET freq = " + str(_f) + " MHz   (set in Rules tab)")
     best_score = init_score; best_m = init
     step_results = []
-    for stepname in proc.get("steps", []):
-        mt = minis_by_name.get(stepname)
-        if mt is None:
-            if log_fn: log_fn(f"\nSTEP {stepname} NOT FOUND, skipping")
-            continue
+    repeat = max(1, int(proc.get("repeat", 1)))
+    min_improve = float(proc.get("repeat_min_improve", 0.3))
+    prev_pass_score = None
+    for p in range(1, repeat + 1):
+        if repeat > 1 and log_fn:
+            log_fn(f"\n========== PASS {p} of {repeat} ==========")
+        for stepname in proc.get("steps", []):
+            mt = minis_by_name.get(stepname)
+            if mt is None:
+                if log_fn: log_fn(f"\nSTEP {stepname} NOT FOUND, skipping")
+                continue
+            if log_fn:
+                _tgt = (mt.get("element") or ", ".join(mt.get("elements", []))
+                        or (f"window {mt.get('window')}" + (f"-{mt.get('window_max')}" if mt.get('window_max') else "") + " directors"
+                            if "window" in mt else "?"))
+                log_fn(f"\nSTEP {stepname} ({mt['type']} on {_tgt})")
+            current, sc, mtr, mlog = run_mini_tune(mt, current, rules, log_fn)
+            step_results.append({"pass": p, "step": stepname, "best_score": sc,
+                                 "best_metrics": mtr, "candidates": mlog})
+            if sc is not None and sc > best_score:
+                best_score = sc; best_m = mtr
+        # Convergence check between passes (composite score on the real geometry).
+        pm = evaluate(current, rules)
+        pass_score = v2_scorer.score(**pm) if "error" not in pm else -1e9
         if log_fn:
-            _tgt = (mt.get("element") or ", ".join(mt.get("elements", []))
-                    or (f"window {mt.get('window')}" + (f"-{mt.get('window_max')}" if mt.get('window_max') else "") + " directors"
-                        if "window" in mt else "?"))
-            log_fn(f"\nSTEP {stepname} ({mt['type']} on {_tgt})")
-        current, sc, mtr, mlog = run_mini_tune(mt, current, rules, log_fn)
-        step_results.append({"step": stepname, "best_score": sc, "best_metrics": mtr, "candidates": mlog})
-        if sc is not None and sc > best_score:
-            best_score = sc; best_m = mtr
+            log_fn(f"\n----- after PASS {p}: composite={pass_score:+.1f} "
+                   f"gain={pm.get('gain_dbi',0):.2f} fb={pm.get('fb_db',0):.2f} swr={pm.get('max_swr',0):.3f} -----")
+        if prev_pass_score is not None and pass_score <= prev_pass_score + min_improve:
+            if log_fn:
+                log_fn(f"[converged] pass {p} gained <= {min_improve}; stopping early (can't get better).")
+            break
+        prev_pass_score = pass_score
     # Re-evaluate the actual final geometry under composite.
     # Prevents resonance-mode step scores (~5000) from hijacking best.
     final_m = evaluate(current, rules)
