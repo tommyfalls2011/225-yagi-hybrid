@@ -400,10 +400,49 @@ def _run_group_tune(mt, elements, rules, log_fn, max_candidates):
     return best_el, best_score, best_m, log
 
 
+def _run_window_tune(mt, elements, rules, log_fn, max_candidates):
+    """Auto-tiling group move: slide a window of `window` directors across the
+    whole array (DIR1+2, DIR3+4, ... for window=2), optimising each window's
+    position/length in turn. Auto-fits however many directors exist. If
+    `window_max` > `window`, it repeats with growing windows (2, then 3, ...).
+    No element list needed -- it discovers the directors itself."""
+    pos_param = mt["type"] == "group_window_position"
+    sub_type = "group_position" if pos_param else "group_length"
+    w0 = int(mt.get("window", 2))
+    wmax = int(mt.get("window_max", w0))
+    delta = float(mt.get("delta_in", 8.0))
+    step = float(mt.get("step_in", 0.5))
+    mode = mt.get("score_mode", "match")
+
+    cur = elements
+    best_m = None; best_score = None; log = []
+    for w in range(max(1, w0), max(w0, wmax) + 1):
+        dirs = sorted([e for e in cur if str(e["name"]).upper().startswith("DIR")],
+                      key=lambda e: float(e["position_in"]))
+        names = [e["name"] for e in dirs]
+        if not names:
+            if log_fn: log_fn("  SKIP: no directors in geometry")
+            break
+        if log_fn:
+            log_fn(f"  -- window size {w}: {len(names)} directors -> "
+                   f"{ -(-len(names)//w) } group(s)")
+        for i in range(0, len(names), w):
+            grp = names[i:i + w]
+            submt = {"type": sub_type, "elements": grp, "delta_in": delta,
+                     "step_in": step, "score_mode": mode}
+            cur, sc, m, _sub = _run_group_tune(submt, cur, rules, log_fn, max_candidates)
+            if m is not None:
+                best_m, best_score = m, sc
+            log.append({"window": w, "group": grp, "score": sc})
+    return cur, best_score, best_m, log
+
+
 def run_mini_tune(mt, elements, rules, log_fn=None, max_candidates=400):
     mtype = mt["type"]
     if mtype in ("group_position", "group_length"):
         return _run_group_tune(mt, elements, rules, log_fn, max_candidates)
+    if mtype in ("group_window_position", "group_window_length"):
+        return _run_window_tune(mt, elements, rules, log_fn, max_candidates)
     target_name = mt["element"]
     if not any(e["name"] == target_name for e in elements):
         if log_fn: log_fn(f"  SKIP: {target_name} not in geometry")
@@ -485,7 +524,9 @@ def run_procedure(proc, minis_by_name, elements, rules, log_fn=None):
             if log_fn: log_fn(f"\nSTEP {stepname} NOT FOUND, skipping")
             continue
         if log_fn:
-            _tgt = mt.get("element") or ", ".join(mt.get("elements", [])) or "?"
+            _tgt = (mt.get("element") or ", ".join(mt.get("elements", []))
+                    or (f"window {mt.get('window')}" + (f"-{mt.get('window_max')}" if mt.get('window_max') else "") + " directors"
+                        if "window" in mt else "?"))
             log_fn(f"\nSTEP {stepname} ({mt['type']} on {_tgt})")
         current, sc, mtr, mlog = run_mini_tune(mt, current, rules, log_fn)
         step_results.append({"step": stepname, "best_score": sc, "best_metrics": mtr, "candidates": mlog})
