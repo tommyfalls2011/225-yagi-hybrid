@@ -1,7 +1,15 @@
 """hybrid_auto7 v2 runner — executes procedures against current geometry.
 Calls nec2c directly. Validates geometry against rules. Scores with v2_scorer.
 """
-import subprocess, math, re, pathlib, copy, tempfile, os, json
+# ruff: noqa: E701, E702  (legacy one-line style throughout this module)
+import subprocess
+import math
+import re
+import pathlib
+import copy
+import tempfile
+import os
+import json
 from . import v2_scorer
 
 INCH = 0.0254
@@ -324,13 +332,19 @@ def validate(elements, rules):
 
 # SCORE_MODE_V1
 def _score_for_mode(mode, m):
-    """mode: 'composite' (default) or 'resonance'."""
+    """mode: 'composite' (default), 'resonance', or 'match'."""
     if mode == "resonance":
         # Reward: |X| near 0, R near 50, max_swr low. No gain reward (would push longer = wrong).
         x_pen   = abs(m.get("center_x", 99))   * 100.0
         r_pen   = abs(m.get("center_r", 0) - 50.0) * 20.0
         swr_pen = max(0.0, m.get("max_swr", 99) - 1.5) * 1000.0
         return 5000.0 - x_pen - r_pen - swr_pen
+    if mode == "match":
+        # Best MATCH: drive reactance X -> 0, SWR -> 1 (max return loss). No R or
+        # gain term, so group moves are free to hunt the lowest-SWR / X=0 point.
+        x_pen   = abs(m.get("center_x", 99)) * 120.0
+        swr_pen = max(0.0, m.get("max_swr", 99) - 1.0) * 1500.0
+        return 5000.0 - x_pen - swr_pen
     # default composite
     return v2_scorer.score(**m)
 
@@ -343,12 +357,57 @@ def _frange(start, stop, step):
         vals.append(round(v, 4)); v += step
     return vals
 
-def run_mini_tune(mt, elements, rules, log_fn=None, max_candidates=200):
+def _run_group_tune(mt, elements, rules, log_fn, max_candidates):
+    """Move a GROUP of elements together by the same offset (everything not in
+    the group is locked). type group_position shifts boom positions; group_length
+    shifts lengths. Sweeps offset in [-delta..+delta] and keeps the best."""
+    names = [n for n in mt.get("elements", []) if any(e["name"] == n for e in elements)]
+    if not names:
+        if log_fn: log_fn("  SKIP: none of the group's elements are in the geometry")
+        return elements, None, None, []
+    param = "position_in" if mt["type"] == "group_position" else "length_in"
+    d = float(mt["delta_in"])
+    offsets = _frange(-d, d, mt["step_in"])
+    if len(offsets) > max_candidates:
+        offsets = offsets[:max_candidates]
+    base = {e["name"]: float(e[param]) for e in elements if e["name"] in names}
+    locked = [e["name"] for e in elements if e["name"] not in names]
+    if log_fn:
+        log_fn(f"  GROUP {param} on [{', '.join(names)}]  (locked: {', '.join(locked) or 'none'})")
+    best_score = None; best_el = elements; best_m = None; log = []
+    for off in offsets:
+        cand = copy.deepcopy(elements)
+        for e in cand:
+            if e["name"] in names:
+                e[param] = round(base[e["name"]] + off, 4)
+        ok, reason = validate(cand, rules)
+        if not ok:
+            log.append({"v": off, "skip": reason})
+            if log_fn: log_fn(f"    offset={off:+6.2f}  SKIP  {reason}")
+            continue
+        m = evaluate(cand, rules)
+        if "error" in m:
+            log.append({"v": off, "err": m["error"]})
+            continue
+        s = _score_for_mode(mt.get("score_mode", "composite"), m)
+        log.append({"v": off, "score": s, "gain": m["gain_dbi"], "fb": m["fb_db"], "max_swr": m["max_swr"]})
+        marker = ""
+        if best_score is None or s > best_score:
+            best_score = s; best_el = cand; best_m = m; marker = "  <-- BEST"
+        if log_fn:
+            log_fn(f"    offset={off:+6.2f}  score={s:+9.1f}  swr={m['max_swr']:.3f}  "
+                   f"X={m.get('center_x',0):+5.1f}  gain={m['gain_dbi']:5.2f}{marker}")
+    return best_el, best_score, best_m, log
+
+
+def run_mini_tune(mt, elements, rules, log_fn=None, max_candidates=400):
+    mtype = mt["type"]
+    if mtype in ("group_position", "group_length"):
+        return _run_group_tune(mt, elements, rules, log_fn, max_candidates)
     target_name = mt["element"]
     if not any(e["name"] == target_name for e in elements):
         if log_fn: log_fn(f"  SKIP: {target_name} not in geometry")
         return elements, None, None, []
-    mtype = mt["type"]
     target = next(e for e in elements if e["name"] == target_name)
     if mtype == "sweep_length":
         param = "length_in"; vals = _frange(mt["start_in"], mt["stop_in"], mt["step_in"])
@@ -425,7 +484,9 @@ def run_procedure(proc, minis_by_name, elements, rules, log_fn=None):
         if mt is None:
             if log_fn: log_fn(f"\nSTEP {stepname} NOT FOUND, skipping")
             continue
-        if log_fn: log_fn(f"\nSTEP {stepname} ({mt['type']} on {mt['element']})")
+        if log_fn:
+            _tgt = mt.get("element") or ", ".join(mt.get("elements", [])) or "?"
+            log_fn(f"\nSTEP {stepname} ({mt['type']} on {_tgt})")
         current, sc, mtr, mlog = run_mini_tune(mt, current, rules, log_fn)
         step_results.append({"step": stepname, "best_score": sc, "best_metrics": mtr, "candidates": mlog})
         if sc is not None and sc > best_score:

@@ -189,5 +189,87 @@
     "step_in": 0.25,
     "score_mode": "composite",
     "notes": "Wide XFRMR position sweep -- explores DE-XFRMR spacing 4-12 in to find the matching sweet spot (5.5-6.5 in)."
+  },
+  {
+    "name": "group_DIR2_DIR3_move",
+    "type": "group_position",
+    "elements": [
+      "DIR2",
+      "DIR3"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR2+DIR3 together for best match (X=0, low SWR). REF/DE/XFRMR/COUPLER/DIR1 locked."
+  },
+  {
+    "name": "group_DIR1_DIR2_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR1+DIR2 together for best match."
+  },
+  {
+    "name": "group_DIR1_DIR2_DIR3_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR1+DIR2+DIR3 together for best match."
+  },
+  {
+    "name": "group_CELL_move",
+    "type": "group_position",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Move the whole driven cell (REF/XFRMR/DE/COUPLER) together vs the directors for best X=0 / lowest SWR."
+  },
+  {
+    "name": "group_CELL_DIR123_move",
+    "type": "group_position",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER",
+      "DIR1",
+      "DIR2",
+      "DIR3"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Move cell + DIR1/2/3 together for the best overall match."
+  },
+  {
+    "name": "group_CELL_length",
+    "type": "group_length",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER"
+    ],
+    "delta_in": 6.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Grow/shrink the whole cell length together to center the match."
   }
 ]
