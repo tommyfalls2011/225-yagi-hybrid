@@ -234,12 +234,19 @@ try:
     from hyagi import v2_runner as _vr
     DB = ROOT / "data/auto7_history.db"
     con = sqlite3.connect(str(DB))
-    sig_like = f"{_vr.taper_signature()}|%h{float(height_ft):.0f}|%"
+    con.execute("CREATE TABLE IF NOT EXISTS learned_moves (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "created_utc TEXT, signature TEXT, dof TEXT, value REAL, band_max_swr REAL, accepted INTEGER)")
+    grand = con.execute("SELECT COUNT(*) FROM learned_moves").fetchone()[0]
+    n_designs = con.execute("SELECT COUNT(DISTINCT signature) FROM learned_moves").fetchone()[0]
+    n_el = len(geo["elements"])
+    sig_like = f"{_vr.taper_signature()}|%h{float(height_ft):.0f}|n{n_el}"
     total = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ?", (sig_like,)).fetchone()[0]
     acc = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ? AND accepted=1", (sig_like,)).fetchone()[0]
-    c1, c2 = st.columns(2)
-    c1.metric("Moves remembered", total)
-    c2.metric("Good (accepted) moves", acc)
+    st.caption(f"Active design: `{_vr.taper_signature()} | h{float(height_ft):.0f} | {n_el} elements`")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total memory (all designs)", grand, f"{n_designs} design(s)")
+    c2.metric("This design — moves", total)
+    c3.metric("This design — good moves", acc)
     rows = con.execute("""
         SELECT dof, value, band_max_swr FROM learned_moves
         WHERE signature LIKE ? AND accepted=1
@@ -250,10 +257,14 @@ try:
     """, (sig_like,)).fetchall()
     con.close()
     if rows:
+        st.markdown("**Best value learned for each parameter (this design):**")
         md = "| Parameter | Best value | gave band-max SWR |\n|---|---|---|\n" + \
              "\n".join(f"| {d} | {v:.2f} | {s:.3f} |" for d, v, s in rows)
         st.markdown(md)
+    elif grand:
+        st.info(f"Memory holds {grand} moves from other designs. This exact "
+                f"taper/height/element-count has none yet — run AUTO-LEARN to build it.")
     else:
-        st.info("No learned moves yet for this taper/band/height — run AUTO-LEARN to start the memory.")
+        st.info("No learned moves yet — run AUTO-LEARN to start the memory.")
 except Exception as e:
     st.caption(f"(learning memory unavailable: {e})")

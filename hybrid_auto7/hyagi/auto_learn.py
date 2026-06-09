@@ -347,16 +347,34 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
             if learned_start:
                 log_fn(f"[learn] {len(learned_start)} parameter(s) recalled from "
                        f"{_moves_count(con, sig)} past moves for this design")
-            move_log = []
-            new_geo, band_max, curve = match_opt.optimize(
-                current, rules, height_ft=cfg.height_ft,
-                target_swr=cfg.target_max_swr, points=cfg.band_sweep_points,
-                restarts=max(1, cfg.max_generations),
-                polish_gain=cfg.polish_gain, log_fn=log_fn,
-                learned_start=learned_start, move_log=move_log,
-            )
-            _save_moves(con, sig, move_log)
-            log_fn(f"[learn] logged {len(move_log)} moves (good & bad) to the database")
+
+            # Persist every move LIVE so nothing is lost if the run is stopped
+            # or errors partway through.
+            ts0 = now_utc()
+            saved = {"n": 0}
+
+            def _sink(m):
+                con.execute(
+                    "INSERT INTO learned_moves (created_utc, signature, dof, value, band_max_swr, accepted) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (ts0, sig, m["dof"], float(m["value"]), float(m["band_max_swr"]), int(m["accepted"])))
+                saved["n"] += 1
+                if saved["n"] % 20 == 0:
+                    con.commit()
+                    log_fn(f"[learn] saved {saved['n']} moves so far...")
+
+            try:
+                new_geo, band_max, curve = match_opt.optimize(
+                    current, rules, height_ft=cfg.height_ft,
+                    target_swr=cfg.target_max_swr, points=cfg.band_sweep_points,
+                    restarts=max(1, cfg.max_generations),
+                    polish_gain=cfg.polish_gain, log_fn=log_fn,
+                    learned_start=learned_start, on_move=_sink,
+                )
+            finally:
+                con.commit()
+            total = _moves_count(con, sig)
+            log_fn(f"[learn] logged {saved['n']} moves this run (memory now holds {total} for this design)")
             metrics = v2_runner.evaluate(new_geo, rules, height_ft=cfg.height_ft)
             if "error" in metrics:
                 log_fn(f"[matcher] final eval failed: {metrics['error']}")

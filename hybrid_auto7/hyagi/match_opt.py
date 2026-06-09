@@ -119,7 +119,7 @@ def _objective(elements, rules, height_ft, f_low, f_high, points):
 
 
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
-             points, steps, target, log_fn, move_log=None):
+             points, steps, target, log_fn, move_log=None, on_move=None):
     best_obj, best_mx = _objective(_apply(elements, vec, de_pos), rules,
                                    height_ft, f_low, f_high, points)
     keys = list(vec.keys())
@@ -137,10 +137,13 @@ def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
                     obj, mx = _objective(_apply(elements, nv, de_pos), rules,
                                          height_ft, f_low, f_high, points)
                     accept = obj < best_obj - 1e-4
+                    move = {"dof": k, "value": nv[k],
+                            "band_max_swr": round(mx, 4),
+                            "accepted": 1 if accept else 0}
                     if move_log is not None:
-                        move_log.append({"dof": k, "value": nv[k],
-                                         "band_max_swr": round(mx, 4),
-                                         "accepted": 1 if accept else 0})
+                        move_log.append(move)
+                    if on_move is not None:
+                        on_move(move)
                     if accept:
                         best_obj, best_mx, vec, improved = obj, mx, nv, True
             if log_fn:
@@ -203,12 +206,14 @@ def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
 def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
              points=21, restarts=2, steps=(8.0, 4.0, 2.0, 1.0, 0.5, 0.25),
              seed=12345, polish_gain=True, log_fn=print,
-             learned_start=None, move_log=None):
+             learned_start=None, move_log=None, on_move=None):
     """Minimise band-max SWR across the band in rules['global'], then recover
     gain/F-B while holding the match.
 
     learned_start: {dof: value} proven-good values from past runs to seed from.
     move_log: list that receives every candidate {dof,value,band_max_swr,accepted}.
+    on_move: callback(move) fired for every candidate so runs can persist moves
+             live (so nothing is lost if the run is stopped or errors).
     Returns (best_elements, best_max_swr, curve)."""
     glb = rules["global"]
     f_low = float(glb["freq_mhz_low"])
@@ -228,7 +233,7 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
 
     best_vec, best_obj, best_mx = _descend(
         dict(vec0), bounds, elements, de_pos, rules, height_ft,
-        f_low, f_high, points, steps, target_swr, log_fn, move_log)
+        f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move)
     if log_fn:
         log_fn(f"  [match] base pass -> band_max_swr={best_mx:.3f}")
 
@@ -243,7 +248,7 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
             span = (hi - lo) * 0.15
             pv[k] = round(min(hi, max(lo, pv[k] + rng.uniform(-span, span))), 3)
         v, o, mx = _descend(pv, bounds, elements, de_pos, rules, height_ft,
-                            f_low, f_high, points, steps, target_swr, log_fn, move_log)
+                            f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move)
         if log_fn:
             log_fn(f"  [match] restart {r} -> band_max_swr={mx:.3f}")
         if o < best_obj - 1e-4:
