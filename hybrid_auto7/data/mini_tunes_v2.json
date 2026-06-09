@@ -271,5 +271,191 @@
     "step_in": 0.5,
     "score_mode": "match",
     "notes": "Grow/shrink the whole cell length together to center the match."
+  },
+  {
+    "name": "group_DIR3_DIR4_move",
+    "type": "group_position",
+    "elements": [
+      "DIR3",
+      "DIR4"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR3+DIR4 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR4_DIR5_move",
+    "type": "group_position",
+    "elements": [
+      "DIR4",
+      "DIR5"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR4+DIR5 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR5_DIR6_move",
+    "type": "group_position",
+    "elements": [
+      "DIR5",
+      "DIR6"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR5+DIR6 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR6_DIR7_move",
+    "type": "group_position",
+    "elements": [
+      "DIR6",
+      "DIR7"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR6+DIR7 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR1_to_DIR4_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR1+DIR2+DIR3+DIR4 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR1_to_DIR6_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR1+DIR2+DIR3+DIR4+DIR5+DIR6 together for best match (others locked)."
+  },
+  {
+    "name": "group_DIR1_to_DIR8_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR1+DIR2+DIR3+DIR4+DIR5+DIR6+DIR7+DIR8 together for best match (others locked)."
+  },
+  {
+    "name": "group_ALL_DIRS_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8",
+      "DIR9",
+      "DIR10",
+      "DIR11",
+      "DIR12",
+      "DIR13",
+      "DIR14"
+    ],
+    "delta_in": 10.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide EVERY director present together (DIR1..DIR14; absent ones ignored)."
+  },
+  {
+    "name": "group_ALL_DIRS_length",
+    "type": "group_length",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8",
+      "DIR9",
+      "DIR10",
+      "DIR11",
+      "DIR12",
+      "DIR13",
+      "DIR14"
+    ],
+    "delta_in": 6.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Grow/shrink EVERY director present together."
+  },
+  {
+    "name": "group_DIR_rear_pairs_5_8_move",
+    "type": "group_position",
+    "elements": [
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Slide DIR5+DIR6+DIR7+DIR8 together for best match (others locked)."
+  },
+  {
+    "name": "group_ALL_move",
+    "type": "group_position",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER",
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8",
+      "DIR9",
+      "DIR10",
+      "DIR11",
+      "DIR12",
+      "DIR13",
+      "DIR14"
+    ],
+    "delta_in": 10.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Move the ENTIRE array together (rarely changes match, useful sanity sweep)."
   }
 ]
