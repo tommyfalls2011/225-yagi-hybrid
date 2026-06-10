@@ -44,7 +44,10 @@ def _solve(card, timeout=120):
                 os.unlink(q)
             except Exception:
                 pass
-    imps, pat = v2_runner.parse_nec_output(text)
+    imps, pattern_blocks = v2_runner.parse_nec_output(text)
+    # perf_report solves one frequency at a time, so flatten the per-frequency
+    # blocks back into a single pattern list for this caller.
+    pat = [pt for blk in pattern_blocks for pt in blk]
     return imps, pat, text
 
 

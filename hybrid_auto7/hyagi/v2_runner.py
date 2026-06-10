@@ -67,6 +67,26 @@ def swr(R, X, Z0=50.0):
     if rho >= 0.999: return 99.0
     return (1.0 + rho) / (1.0 - rho)
 
+
+def _interp_rx(freqs, impedances, f):
+    """Linear-interpolate (R, X) at frequency f from the swept grid so the
+    'centre' metrics are read at the true operating centre, not just whichever
+    sample happens to sit in the middle of the band."""
+    n = min(len(freqs), len(impedances))
+    if n == 0:
+        return 0.0, 0.0
+    if n == 1 or f <= freqs[0]:
+        return impedances[0]
+    if f >= freqs[n - 1]:
+        return impedances[n - 1]
+    for i in range(1, n):
+        if f <= freqs[i]:
+            f0, f1 = freqs[i - 1], freqs[i]
+            (r0, x0), (r1, x1) = impedances[i - 1], impedances[i]
+            t = 0.0 if f1 == f0 else (f - f0) / (f1 - f0)
+            return r0 + t * (r1 - r0), x0 + t * (x1 - x0)
+    return impedances[n - 1]
+
 # ---------- NEC card builder ----------
 def _half_sections(half_len_m, taper):
     """Return [(radius_m, length_m), ...] from centre to tip for one half
@@ -171,28 +191,39 @@ _PAT_RE = re.compile(
 )
 
 def parse_nec_output(text):
+    """Return (impedances, pattern_blocks).
+
+    A multi-frequency deck (FR 0 N ...) prints one ANTENNA INPUT PARAMETERS
+    block AND one RADIATION PATTERNS block per frequency.  impedances[i] is the
+    (R, X) for frequency i; pattern_blocks[i] is that frequency's list of
+    (theta, phi, gain) points.  Keeping them separated is essential: gain / F-B
+    must be read from a SINGLE frequency's pattern (the design centre), never
+    from a mix of all frequencies merged together."""
     impedances = []
-    pattern = []
+    pattern_blocks = []
+    cur_block = None
     in_imp = False
     in_pat = False
     for ln in text.splitlines():
         if "ANTENNA INPUT PARAMETERS" in ln:
-            in_imp = True; in_pat = False; continue
+            in_imp = True; in_pat = False; cur_block = None; continue
         if "RADIATION PATTERNS" in ln:
-            in_imp = False; in_pat = True; continue
+            in_imp = False; in_pat = True
+            cur_block = []
+            pattern_blocks.append(cur_block); continue
         if in_imp:
             m = _IMP_RE.match(ln)
             if m:
                 impedances.append((float(m.group(1)), float(m.group(2))))
                 in_imp = False
-        elif in_pat:
+        elif in_pat and cur_block is not None:
             m = _PAT_RE.match(ln)
             if m:
                 try:
-                    pattern.append((float(m.group(1)), float(m.group(2)), float(m.group(3))))
+                    cur_block.append((float(m.group(1)), float(m.group(2)), float(m.group(3))))
                 except ValueError:
                     pass
-    return impedances, pattern
+    return impedances, pattern_blocks
 
 # ---------- Fast SWR-only band evaluator (no radiation pattern) ----------
 def band_swr_curve(elements, f_low, f_high, points, height_ft=30.0):
@@ -269,26 +300,42 @@ def evaluate(elements, rules, height_ft=30.0, n_points=None):
         for p in (nec_path, out_path):
             try: os.unlink(p)
             except Exception: pass
-    impedances, pattern = parse_nec_output(text)
+    impedances, pattern_blocks = parse_nec_output(text)
     if not impedances:
         return {"error": "no impedance parsed"}
-    if not pattern:
+    if not pattern_blocks or not any(pattern_blocks):
         return {"error": "no pattern parsed"}
     swrs = [swr(R, X) for (R, X) in impedances]
     max_swr = max(swrs)
     avg_swr = sum(swrs) / len(swrs)
-    Rc, Xc = impedances[len(impedances)//2]
+    # Centre metrics at the TRUE operating centre frequency (interpolated on the
+    # swept grid) rather than just the middle sample of the band.
+    fcenter = float(glb.get("freq_mhz_center", freqs[len(freqs) // 2]))
+    Rc, Xc = _interp_rx(freqs, impedances, fcenter)
+    # Gain / F-B must come from ONE frequency's pattern (the design centre), not
+    # a mix of all frequencies.  Pick the pattern block whose frequency is
+    # nearest fcenter (skip any empty blocks).
+    ci = min(range(len(freqs)), key=lambda i: abs(freqs[i] - fcenter))
+    pattern = pattern_blocks[ci] if ci < len(pattern_blocks) and pattern_blocks[ci] else \
+        next((b for b in pattern_blocks if b), [])
     max_gain = max(t[2] for t in pattern)
     peak = max(pattern, key=lambda t: t[2])
     peak_theta, peak_phi, _ = peak
     back_phi = (peak_phi + 180.0) % 360.0
-    # Front-to-back must compare the forward peak against the REAR LOBE maximum,
-    # i.e. the strongest gain within +/-REAR_HALF deg of the back azimuth (over
-    # all elevations).  Reading a single 180-deg point can land in a sharp null
-    # and produce a physically impossible F/B of 60-100 dB.
+    # Front-to-back must compare the forward peak against the REAR LOBE max
+    # *at the forward main-lobe elevation* (theta within +/-ELEV_HALF of the
+    # peak), inside +/-REAR_HALF deg of the back azimuth.  Searching ALL
+    # elevations conflated high-angle ground/rear lobes into F/B and understated
+    # it; reading a single 180-deg point can hit a null and overstate it to a
+    # physically impossible 60-100 dB.  This cut avoids both.
     REAR_HALF = 30.0
+    ELEV_HALF = 10.0
     rear_vals = [g for (t, p, g) in pattern
-                 if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
+                 if abs(t - peak_theta) <= ELEV_HALF
+                 and abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
+    if not rear_vals:   # fallback: whole rear hemisphere if the elev cut is empty
+        rear_vals = [g for (t, p, g) in pattern
+                     if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
     back_gain = max(rear_vals) if rear_vals else (max_gain - 40.0)
     fb_db = max_gain - back_gain
     return {

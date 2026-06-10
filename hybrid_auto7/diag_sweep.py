@@ -25,7 +25,8 @@ def main():
     o = p.replace(".nec", ".out")
     subprocess.run(["nec2c","-i",p,"-o",o], capture_output=True, text=True, timeout=120)
     text = Path(o).read_text()
-    imps, pat = v2_runner.parse_nec_output(text)
+    imps, _blocks = v2_runner.parse_nec_output(text)
+    pat = [pt for blk in _blocks for pt in blk]
     os.unlink(p); os.unlink(o)
     print(f"{'freq':>9} {'R':>8} {'X':>8} {'SWR':>7}")
     worst = (0,0); maxs=0
@@ -51,7 +52,8 @@ def main():
         oo = pp.replace(".nec", ".out")
         subprocess.run(["nec2c","-i",pp,"-o",oo], capture_output=True, text=True, timeout=120)
         t = Path(oo).read_text(); os.unlink(pp); os.unlink(oo)
-        _i, p2 = v2_runner.parse_nec_output(t)
+        _i, _b = v2_runner.parse_nec_output(t)
+        p2 = [pt for blk in _b for pt in blk]
         return max((x[2] for x in p2), default=float("nan"))
     g_fs = _peak_gain(nec_fs)
     g_gnd = _peak_gain(nec_g)
