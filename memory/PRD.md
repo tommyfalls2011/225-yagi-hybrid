@@ -125,6 +125,40 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   (keep 8_Auto_Learn.py); P2 remove git junk blobs `datetime` (~55MB) & `re`
   (~13MB) + empty stray files. User confirmed PAT is valid (not revoked).
 
+## TUNING-MATH AUDIT + USER'S REAL 7-EL BUILD (2026-06-09)
+- User reported the procedure (smart_group_match_4x) gave SWR 1.421 after ~102 min.
+  Diagnosed: that procedure is the greedy/local-minimum path; matcher hits ~1.20.
+- AUDITED the physics. Found + FIXED real bugs in hyagi/v2_runner.py (pushed):
+  1. parse_nec_output now returns PER-FREQUENCY pattern blocks (was merging every
+     frequency's RP into one list -> gain/F-B compared forward peak of one freq vs
+     rear lobe of another). evaluate() now reads gain/F-B from the centre-freq block.
+  2. F/B measured at the forward MAIN-LOBE elevation (+/-10 deg), not over all
+     elevations (which conflated high-angle rear lobes). F/B on seed went 9.76 -> 18.24 dB.
+  3. centre R/X/SWR interpolated at the TRUE operating centre (freq_mhz_center,
+     27.195) instead of the band midpoint sample (27.26). Added _interp_rx().
+  - perf_report.py + diag_sweep.py updated to flatten the new block format.
+  - TESTS: tests/test_physics_math.py (3 passing).
+  3rd fix: rules_v2.json DIR1_DIR2 min spacing 48->40 (was REJECTING the user's
+     real 45.25" DIR1-DIR2 spacing in validate()).
+- TOPOLOGY confirmed by user: DE insulated + coax-fed; XFRMR/COUPLER grounded to
+  boom at centre (~= floating parasitic for symmetric mode, so current model OK).
+  User plans to change the grounding later -> revisit model then.
+- USER'S REAL ANTENNA (7-element, 3 directors), given by user:
+  lengths REF223 XFRMR199 DE210 COUPLER173 DIR1 194.5 DIR2 188 DIR3 182.5;
+  spacings XFRMR-DE 6.5, DE-COUPLER 23, COUPLER-DIR1 73.5, DIR1-DIR2 45.25,
+  DIR2-DIR3 75; boom 22 ft -> SOLVED REF->XFRMR = 40.75" (REF at 0, DIR3 at 264).
+  Model (fixed) predicts as-built dips ~26.6 MHz (low), SWR 1.84 @27.195 rising to
+  ~3 @27.855; user confirmed model matches bench and asked to retune lengths to 27.195.
+- RETUNED (lengths-only, spacings preserved as built) -> band-max SWR 1.21,
+  centre 1.21, gain 14.36 dBi, F/B 15.4 dB. Loaded into data/current_geometry_v2.json
+  and pushed. (Full matcher that also moves spacings gave 1.20 / 13.9 / 14.7.)
+- ENV: nec2c binary keeps VANISHING from this pod (recurring). Reinstall on demand:
+  sudo apt-get install -y nec2c. Not a code bug; user's own Ubuntu unaffected.
+- STILL PENDING (user deferred): delete duplicate UI pages; remove git junk blobs.
+  Open question for user: exact tubing OD/section schedule (taper_v2.json still the
+  0.625"/0.5" placeholder) — user said model matches bench so taper accepted for now.
+
+
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
   ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
