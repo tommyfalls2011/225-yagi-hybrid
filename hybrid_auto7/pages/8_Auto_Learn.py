@@ -143,6 +143,10 @@ with st.expander("📤 Export CURRENT geometry to .nec / .maa", expanded=False):
     except Exception as _ex:
         st.warning(f"Export unavailable: {_ex}")
 
+st.info(f"**Active tubing taper:** `{v2_runner.taper_signature()}`  — every tune "
+        f"and export uses THIS schedule. Edit it in the ⚙️ Element taper box above "
+        f"if it doesn't match your real elements, then re-run.")
+
 st.markdown("---")
 if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run"):
     if band_high <= band_low:
@@ -197,6 +201,7 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         "low": float(band_low), "high": float(band_high), "points": int(band_points),
         "height": float(height_ft), "elapsed": elapsed,
         "report": report,
+        "taper": v2_runner.taper_signature(),
     }
 
 res = st.session_state.get("al_result")
@@ -213,6 +218,7 @@ if res:
                help="For high power this must be ≈0")
     cc3.metric("Center SWR", f"{res.get('center_swr', 0):.3f}")
     cc4.metric("Return loss", f"{res.get('center_rl', 0):.1f} dB")
+    st.caption(f"Tuned on tubing taper: `{res.get('taper', '?')}`")
 
     curve, _mx, _av = v2_runner.band_swr_curve(
         res["geometry"], res["low"], res["high"], res["points"], res["height"])
