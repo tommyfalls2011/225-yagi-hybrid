@@ -181,6 +181,30 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   with wrong taper the optimizer's output lengths won't match what they cut. ASKED.
 
 
+## .NEC + .MAA EXPORT (2026-06-09, cont.)
+- BUILT hyagi/exporters.py: to_nec() reuses v2_runner.build_nec_card (tapered-Al
+  deck, band sweep FR + full RP) -> openable in nec2c/4nec2/xnec2c. to_maa()
+  emits MMANA-GAL text matching the user's real owa_27mhz_high_fb2.maa layout:
+  title / '*' / freq / '*** wires ***' N rows X1,Y1,Z1,X2,Y2,Z2,R,SEG(-1) in
+  METERS (span on Y, boom on X, height on Z) / '*** source ***' 1,0 + wNc,0.0,1.0
+  (DE fed at its CENTRE wire) / '*** load ***' 0,0 / '*** segmentation ***'
+  40,40,2.0,2 / '*** G/W_E ***' 0,0.0. Each element emitted as its STEPPED
+  tubing sections (not one uniform wire) so MMANA resonance matches the engine.
+- Auto-Learn page: .nec/.maa download for tuned result + standalone "export
+  CURRENT geometry" expander + .maa preview.
+- TESTS tests/test_exporters.py (4, incl. nec2c round-trip) all pass.
+- PUSHED to origin/wideband-matcher (commit 9e35247).
+- STILL PENDING (asked user, awaiting answers):
+  * Run-page consolidation: Auto-Learn already = warm-start-from-DB + resonant
+    optimize (R->50,X->0) + full metrics + export. Proposed: delete 6_Run.py +
+    7_Learning.py, rename Auto-Learn -> "Run". (recommended option a)
+  * Git cleanup: git rm junk (datetime 55MB, re 13MB, _scan_*, _all_files.txt,
+    streamlit.log, sky-bouncer:, MAX_PEAK_ELEV_DEG=12.0) + .gitignore
+    data/current_geometry_v2.json. (history rewrite for the 55MB blob needs
+    explicit go-ahead + force-push.)
+  * Taper section LENGTHS still unknown (OD steps 1.25/1.125/1.0...0.5 confirmed,
+    lengths not given) -> taper_v2.json still placeholder 0.625/0.5.
+
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
   ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
