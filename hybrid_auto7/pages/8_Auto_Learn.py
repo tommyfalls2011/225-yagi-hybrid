@@ -52,6 +52,15 @@ with c1:
                                 step=0.005, format="%.3f", key="al_high")
     target_swr = st.number_input("Target max SWR", value=1.20, min_value=1.01, max_value=3.0,
                                  step=0.01, format="%.2f", key="al_target")
+    tune_goal = st.selectbox(
+        "Tune goal",
+        ["wideband", "resonant"],
+        format_func=lambda g: ("Wideband SWR (flattest across band)" if g == "wideband"
+                               else "Resonant match — high power (R≈50, X≈0 at center)"),
+        key="al_goal",
+        help="Resonant drives reactance X→0 and R→50 at the center frequency for "
+             "max return loss / safe high-power (50 kW+) operation; band edges may rise. "
+             "Wideband holds the lowest worst-case SWR across the whole band.")
 with c2:
     height_ft = st.number_input("Height (ft)", value=30.0, step=1.0, key="al_height")
     band_points = st.slider("Band sweep points", 9, 41, 21, key="al_points",
@@ -135,6 +144,7 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         max_generations=int(restarts) + 1,
         use_matcher=True,
         polish_gain=bool(polish),
+        tune_goal=str(tune_goal),
     )
     started = datetime.datetime.now()
     with st.spinner("Self-learning… (one NEC2 solve per candidate; this can take a few minutes)"):
@@ -143,6 +153,9 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
 
     m = result["final_metrics"]
     band_max = m.get("band_max_swr", m.get("max_swr", 0))
+    csw = float(m.get("center_swr", 0.0))
+    import math as _math
+    crl = 99.0 if csw <= 1.0 else -20.0 * _math.log10((csw - 1.0) / (csw + 1.0))
     with st.spinner("Building full performance report…"):
         report = perf_report.analyze(result["final_geometry"], rules_run, height_ft=float(height_ft))
     st.session_state["al_result"] = {
@@ -150,6 +163,11 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         "band_max": band_max,
         "gain": m.get("gain_dbi", 0),
         "fb": m.get("fb_db", 0),
+        "center_r": float(m.get("center_r", 0.0)),
+        "center_x": float(m.get("center_x", 0.0)),
+        "center_swr": csw,
+        "center_rl": crl,
+        "goal": str(tune_goal),
         "score": result["final_score"],
         "low": float(band_low), "high": float(band_high), "points": int(band_points),
         "height": float(height_ft), "elapsed": elapsed,
@@ -164,6 +182,12 @@ if res:
         f"band-max SWR {res['band_max']:.3f}  ·  gain {res['gain']:.2f} dBi  ·  "
         f"F/B {res['fb']:.2f} dB  ·  score {res['score']:+.1f}  ·  {res['elapsed']:.0f}s"
     )
+    cc1, cc2, cc3, cc4 = st.columns(4)
+    cc1.metric("Center R", f"{res.get('center_r', 0):.1f} Ω")
+    cc2.metric("Center X (reactance)", f"{res.get('center_x', 0):+.2f} Ω",
+               help="For high power this must be ≈0")
+    cc3.metric("Center SWR", f"{res.get('center_swr', 0):.3f}")
+    cc4.metric("Return loss", f"{res.get('center_rl', 0):.1f} dB")
 
     curve, _mx, _av = v2_runner.band_swr_curve(
         res["geometry"], res["low"], res["high"], res["points"], res["height"])

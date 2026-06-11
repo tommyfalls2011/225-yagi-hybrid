@@ -55,6 +55,8 @@ class LearnConfig:
     db_path: str | None = None        # None -> default auto7_history.db
     use_matcher: bool = True          # True -> coordinate-descent wideband matcher
     polish_gain: bool = True          # recover gain/F-B after hitting SWR target
+    tune_goal: str = "wideband"       # "wideband" (min worst SWR) or "resonant"
+                                      # (R->50, X->0 at centre for high power)
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +372,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                     restarts=max(1, cfg.max_generations),
                     polish_gain=cfg.polish_gain, log_fn=log_fn,
                     learned_start=learned_start, on_move=_sink,
+                    goal=getattr(cfg, "tune_goal", "wideband"),
                 )
             finally:
                 con.commit()
