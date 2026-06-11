@@ -237,6 +237,27 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   approved): move live taper/geometry to an UNTRACKED data/runtime/ dir, keep the
   tracked files as read-only defaults.
 
+## UNIFIED TUNER WORKFLOW (2026-06-09, cont.) — commit 804a309
+- User (frustrated) clarified the core ask: ONE top-to-bottom page flow with full
+  control. DELIVERED clean 7-page flow: 1_Antenna_Setup, 2_Rules, 3_Cell_Definition,
+  4_Mini_Tunes, 5_Procedures, 6_Tune_and_Learn (bottom: run+log+learn), 7_Report
+  (printable). Deleted legacy dupes 1_Yagi_Designer, 6_Run, 7_Learning.
+- NEW 1_Antenna_Setup: # elements, boom FIXED/FREE, height, boom diameter,
+  INSULATED/GROUNDED; build/reseed. Saves data/setup_v2.json.
+- 6_Tune_and_Learn (was 8_Auto_Learn): reads setup; METHOD selector = Auto-matcher
+  OR "Run MY procedure" (user's mini-tune sequence) with logging + self-learn;
+  wideband/resonant goal; honors boom-free + grounded.
+- 7_Report: full perf report + CUT SHEET (per-section tubing) + SWR curve + best
+  DB run + .nec/.maa/JSON download; print via browser Ctrl+P.
+- ENGINE: v2_runner grounded-boom model (parasitics bonded to a metal boom Ø
+  boom_diameter_in; DE insulated) + GROUNDED/BOOM_DIAMETER_IN globals; match_opt
+  tune_spacings (boom-free moves director spacings); auto_learn LearnConfig +
+  applies globals. Validated: insulated/grounded/boom-free all solve; both tuning
+  paths run + log. NOTE: grounded ~= insulated for symmetric centre-bonded
+  elements (correct physics); grounded solves are slower (more wires).
+- Did NOT touch taper_v2.json / current_geometry_v2.json (user-owned).
+
+
 
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
