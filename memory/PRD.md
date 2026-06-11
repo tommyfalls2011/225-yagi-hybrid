@@ -218,6 +218,26 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
 - .nec/.maa exports now carry the full stepped taper (REF centre wire = 1.25" OD;
   39 wires for the 7-el build). PUSHED origin/wideband-matcher (f561358).
 
+## CORRECTION: taper default must stay COMMERCIAL (2026-06-09, cont.)
+- MISTAKE: a prior step overwrote the default taper with the user's heavy custom
+  schedule AND re-tuned geometry on it. WRONG — 0.625"/0.5" is the user's STANDARD
+  commercial taper and must remain the default. User only wanted the ABILITY to
+  change taper per custom antenna, as an explicit option on the Learn page before
+  procedures begin.
+- REVERTED data/taper_v2.json -> 0.625/0.5 and current_geometry_v2.json -> the
+  pre-change tune (both from commit 9e35247).
+- Auto-Learn page: taper is now a PROMINENT "set BEFORE you tune" section (not a
+  collapsed expander), default = standard commercial, with Save + "Reset to
+  standard commercial (0.625/0.5)" buttons. (commit 226d020)
+- RULE GOING FORWARD: never commit changes to taper_v2.json / current_geometry_v2.json
+  (user-owned, app-written) -> stops the recurring git-pull conflicts.
+- Recurring pain: these two data files are tracked AND app-written, so every local
+  run dirties them and blocks `git pull`. Resolve locally with
+  `git checkout -- <file>` then pull. Optional permanent fix offered (not yet
+  approved): move live taper/geometry to an UNTRACKED data/runtime/ dir, keep the
+  tracked files as read-only defaults.
+
+
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
   ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
