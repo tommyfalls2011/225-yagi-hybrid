@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 from hyagi import v2_runner  # noqa: E402
 from hyagi import perf_report  # noqa: E402
 from hyagi import hybrid_seed  # noqa: E402
+from hyagi import exporters  # noqa: E402
 from hyagi.auto_learn import LearnConfig, run_learning  # noqa: E402
 
 
@@ -117,6 +118,30 @@ gcols = st.columns(min(4, len(geo["elements"])) or 1)
 for i, e in enumerate(geo["elements"]):
     with gcols[i % len(gcols)]:
         st.caption(f"`{e['name']}`  pos={float(e['position_in']):.1f}  len={float(e['length_in']):.1f}")
+
+with st.expander("📤 Export CURRENT geometry to .nec / .maa", expanded=False):
+    st.caption("Export the current geometry as-is (no tuning needed) to open in "
+               "nec2c / 4nec2 / xnec2c (.nec) or MMANA-GAL (.maa).")
+    rules_cur = json.loads(json.dumps(rules))
+    rules_cur["global"]["freq_mhz_low"] = float(band_low)
+    rules_cur["global"]["freq_mhz_high"] = float(band_high)
+    try:
+        nec_cur = exporters.to_nec(geo["elements"], rules_cur,
+                                   height_ft=float(height_ft), points=int(band_points))
+        maa_cur = exporters.to_maa(geo["elements"], rules_cur,
+                                   height_ft=float(height_ft),
+                                   center_mhz=float(glb.get("freq_mhz_center", 27.195)))
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.download_button("Download .nec", data=nec_cur,
+                               file_name="hybrid_auto7_current.nec", mime="text/plain",
+                               use_container_width=True, key="al_dl_nec_cur")
+        with ec2:
+            st.download_button("Download .maa", data=maa_cur,
+                               file_name="hybrid_auto7_current.maa", mime="text/plain",
+                               use_container_width=True, key="al_dl_maa_cur")
+    except Exception as _ex:
+        st.warning(f"Export unavailable: {_ex}")
 
 st.markdown("---")
 if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run"):
@@ -246,6 +271,36 @@ if res:
                            data=json.dumps({"elements": res["geometry"]}, indent=2),
                            file_name="auto_learn_geometry.json",
                            use_container_width=True, key="al_dl")
+
+    # ---- Open in external simulators (.nec / .maa) -------------------------
+    st.markdown("**Open in external programs**")
+    st.caption("Exports the TUNED antenna so you can verify / view it elsewhere. "
+               "`.nec` is the same tapered-aluminium model the optimizer used "
+               "(nec2c / 4nec2 / xnec2c). `.maa` is MMANA-GAL — element span on Y, "
+               "boom on X, height on Z; the DE is voltage-fed at its centre. "
+               "Each element keeps its stepped tubing so the resonance matches.")
+    rules_exp = json.loads(json.dumps(rules))
+    rules_exp["global"]["freq_mhz_low"] = res["low"]
+    rules_exp["global"]["freq_mhz_high"] = res["high"]
+    try:
+        nec_txt = exporters.to_nec(res["geometry"], rules_exp,
+                                   height_ft=res["height"], points=res["points"])
+        maa_txt = exporters.to_maa(res["geometry"], rules_exp,
+                                   height_ft=res["height"],
+                                   center_mhz=float(glb.get("freq_mhz_center", 27.195)))
+        e1, e2 = st.columns(2)
+        with e1:
+            st.download_button("Download .nec (NEC-2 deck)", data=nec_txt,
+                               file_name="hybrid_auto7_tuned.nec", mime="text/plain",
+                               use_container_width=True, key="al_dl_nec")
+        with e2:
+            st.download_button("Download .maa (MMANA-GAL)", data=maa_txt,
+                               file_name="hybrid_auto7_tuned.maa", mime="text/plain",
+                               use_container_width=True, key="al_dl_maa")
+        with st.expander("Preview .maa", expanded=False):
+            st.code(maa_txt, language="text")
+    except Exception as _ex:
+        st.warning(f"Export unavailable: {_ex}")
 
 # ---- Learning memory (what it has learned for THIS design) -----------------
 st.markdown("---")
