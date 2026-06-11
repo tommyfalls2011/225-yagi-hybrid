@@ -272,22 +272,31 @@ class MoveMemory:
 # ---------------------------------------------------------------------------
 def warm_start_geometry(con, cfg, fallback_elements):
     """If the DB holds a good prior run for this project signature, start from
-    its geometry instead of the generic one."""
+    its geometry instead of the generic one.
+
+    CRITICAL: only warm-start from a past run with the SAME element set (same
+    count AND names) as the current geometry. Otherwise a different design saved
+    under the same project name (e.g. an old 8-element run) would be resurrected
+    and tuned in place of the antenna the user actually set up."""
     cur = con.cursor()
+    want_names = sorted(str(e["name"]).upper() for e in fallback_elements)
+    n_want = len(fallback_elements)
     cur.execute("""
-        SELECT id FROM runs
-        WHERE status='DONE' AND design_key LIKE ?
-        ORDER BY max_swr ASC, avg_swr ASC LIMIT 1
-    """, (f"{cfg.project_name}|%",))
-    row = cur.fetchone()
-    if not row:
-        return fallback_elements, None
-    run_id = row["id"]
-    cur.execute("SELECT name, position_in, length_in FROM elements WHERE run_id=? ORDER BY position_in", (run_id,))
-    els = [{"name": r["name"], "position_in": r["position_in"], "length_in": r["length_in"]} for r in cur.fetchall()]
-    if not els:
-        return fallback_elements, None
-    return els, run_id
+        SELECT r.id FROM runs r
+        WHERE r.status='DONE' AND r.design_key LIKE ?
+          AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+        ORDER BY r.max_swr ASC, r.avg_swr ASC
+    """, (f"{cfg.project_name}|%", n_want))
+    for row in cur.fetchall():
+        run_id = row["id"]
+        ecur = con.cursor()
+        ecur.execute("SELECT name, position_in, length_in FROM elements "
+                     "WHERE run_id=? ORDER BY position_in", (run_id,))
+        els = [{"name": r["name"], "position_in": r["position_in"],
+                "length_in": r["length_in"]} for r in ecur.fetchall()]
+        if els and sorted(str(e["name"]).upper() for e in els) == want_names:
+            return els, run_id
+    return fallback_elements, None
 
 
 # ---------------------------------------------------------------------------
