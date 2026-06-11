@@ -207,6 +207,23 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
 res = st.session_state.get("al_result")
 if res:
     st.markdown("### Result")
+    # Guard against a STALE result: if the current geometry no longer matches the
+    # one this result was tuned for (e.g. you reseeded a different element count,
+    # adopted/pulled a new geometry, or never adopted this run), the result's
+    # numbers and .nec/.maa export belong to a DIFFERENT antenna. Make that loud.
+    res_names = [e["name"] for e in res["geometry"]]
+    cur_names = [e["name"] for e in geo["elements"]]
+    if res_names != cur_names:
+        st.error(
+            f"⚠️ This result is from a PREVIOUS run ({len(res_names)} elements: "
+            f"{', '.join(res_names)}) and does NOT match your current geometry "
+            f"({len(cur_names)} elements: {', '.join(cur_names)}). Its metrics and "
+            f"the .nec/.maa export below are for that other antenna — adopt it, or "
+            f"clear it and re-run AUTO-LEARN on your current geometry."
+        )
+        if st.button("Clear stale result", key="al_clear_stale"):
+            del st.session_state["al_result"]
+            st.rerun()
     ok = res["band_max"] <= float(target_swr) + 1e-6
     (st.success if ok else st.warning)(
         f"band-max SWR {res['band_max']:.3f}  ·  gain {res['gain']:.2f} dBi  ·  "
