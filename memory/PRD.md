@@ -205,6 +205,19 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   * Taper section LENGTHS still unknown (OD steps 1.25/1.125/1.0...0.5 confirmed,
     lengths not given) -> taper_v2.json still placeholder 0.625/0.5.
 
+## CUSTOM MULTI-SECTION TAPER + RE-TUNE (2026-06-09, cont.)
+- User gave real telescoping schedule (centre->tip, per half element), section
+  LENGTHS: 36,36,24,18,12 then to tip. ODs: user named 1.25/1.125/1.0 ".. down
+  to .5"; ODs for the 18"/12" sections INFERRED as 0.875/0.75 (1/8"-wall step) —
+  user can correct in the Auto-Learn taper editor.
+- taper_v2.json default now: [1.25,36],[1.125,36],[1.0,24],[0.875,18],[0.75,12],
+  [0.5,999]. Fatter centre tube detuned old geometry to band SWR 2.0.
+- RE-TUNED (resonant high-power goal): center R=49.75 X=0.435 SWR=1.010 (X~0 for
+  50kW), gain 14.79 dBi, F/B 18.21 dB. SWR <=1.085 across 40-ch (26.965-27.405),
+  <=1.79 freeband edges. Adopted into current_geometry_v2.json.
+- .nec/.maa exports now carry the full stepped taper (REF centre wire = 1.25" OD;
+  39 wires for the 7-el build). PUSHED origin/wideband-matcher (f561358).
+
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
   ~6 dB ground reflection at peak elevation => 14-15 dBi realistic; quick free-space vs ground
