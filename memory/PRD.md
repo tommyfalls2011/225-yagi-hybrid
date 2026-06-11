@@ -158,6 +158,28 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   Open question for user: exact tubing OD/section schedule (taper_v2.json still the
   0.625"/0.5" placeholder) — user said model matches bench so taper accepted for now.
 
+## HIGH-POWER RESONANT MATCH + MATCH-SCORING FIX (2026-06-09, cont.)
+- User ran a Run-page procedure -> SWR 1.43 after 67 min (WORSE than the committed
+  1.21). Root cause: match score_mode weighted reactance so heavily it ACCEPTED a
+  higher SWR to zero X (picked SWR 1.43/X=0 over 1.31/X=-2). FIXED _score_for_mode
+  "match": band SWR dominates (3000x), X a tiny tiebreak (5x). +regression test.
+- KEY new requirement from user: this is a HIGH-POWER (50kW+) hybrid -> reactance X
+  at the feed MUST be ~0 at the operating centre (27.195); also wants high return
+  loss + good SWR. No prior tuning targeted centre resonance (all chased band SWR).
+- BUILT new tune goal "resonant" in match_opt.optimize(goal=): drives R->50 & X->0
+  at freq_mhz_center (objective = centre SWR + 0.04|Xc| + 0.30*max(0,bandmax-1)),
+  no early-out, full restarts, no gain-polish (to not disturb centre). Added
+  _center_rx() interpolation. Threaded via LearnConfig.tune_goal + auto_learn ->
+  optimize. Auto-Learn UI: "Tune goal" selector (Wideband SWR | Resonant high-power)
+  + centre R / X / SWR / Return-loss metrics readout.
+- VALIDATED on user's real 7-el build (goal=resonant): centre @27.195 R=50.06,
+  X=-0.005, SWR=1.001, RETURN LOSS 64.6 dB, gain 14.28 dBi, F/B 16.84 dB
+  (band edges rise to ~1.66 — expected tradeoff for a perfect centre match).
+- TESTS: tests/test_resonant_match.py (+ physics + smart_group_match) all pass (9).
+- TAPER: user's CUSTOM high-power elements are 1.25 / 1.125 / 1.0 ... down to 0.5"
+  with corona balls (commercial = 0.625/0.5). Need SECTION LENGTHS to set taper_v2;
+  with wrong taper the optimizer's output lengths won't match what they cut. ASKED.
+
 
 ## NEXT
 - Issue 2 (P1): confirm 14-15 dBi over real ground is physical (free-space ~12-13 dBi + up to
