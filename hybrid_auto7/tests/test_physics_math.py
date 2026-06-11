@@ -64,3 +64,18 @@ def test_fb_and_center_are_physical():
     # centre R/X read at true 27.195 -> ~60 ohm / +11 ohm for the seed geometry.
     assert 45.0 < m5["center_r"] < 75.0
     assert m5["center_swr"] < 1.5
+
+
+def test_match_score_mode_prefers_lower_swr():
+    """The 'match' score must reward the lowest worst-case band SWR, not trade
+    it away to zero out reactance.  Regression for the run that picked
+    SWR 1.430/X=0 over SWR 1.307/X=-2 and ended worse than it started."""
+    higher_swr_zero_x = {"max_swr": 1.430, "center_x": 0.0}
+    lower_swr_some_x = {"max_swr": 1.307, "center_x": -2.0}
+    s_hi = R._score_for_mode("match", higher_swr_zero_x)
+    s_lo = R._score_for_mode("match", lower_swr_some_x)
+    assert s_lo > s_hi, "match mode must prefer the lower band SWR"
+    # and X still breaks ties at equal SWR
+    a = R._score_for_mode("match", {"max_swr": 1.20, "center_x": 0.0})
+    b = R._score_for_mode("match", {"max_swr": 1.20, "center_x": 8.0})
+    assert a > b

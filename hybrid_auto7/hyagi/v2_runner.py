@@ -387,11 +387,16 @@ def _score_for_mode(mode, m):
         swr_pen = max(0.0, m.get("max_swr", 99) - 1.5) * 1000.0
         return 5000.0 - x_pen - r_pen - swr_pen
     if mode == "match":
-        # Best MATCH: drive reactance X -> 0, SWR -> 1 (max return loss). No R or
-        # gain term, so group moves are free to hunt the lowest-SWR / X=0 point.
-        x_pen   = abs(m.get("center_x", 99)) * 120.0
-        swr_pen = max(0.0, m.get("max_swr", 99) - 1.0) * 1500.0
-        return 5000.0 - x_pen - swr_pen
+        # Best MATCH = the lowest WORST-CASE band SWR (what the user actually
+        # reads on the meter).  SWR dominates the score; reactance is only a
+        # tiny tiebreaker so that two points with the same SWR prefer the more
+        # resonant one.  (Previously X was weighted so heavily that the search
+        # would ACCEPT a higher SWR just to zero out X -- e.g. it picked
+        # SWR 1.43 / X=0 over SWR 1.31 / X=-2, raising the SWR the user cares
+        # about.  Now lowering band SWR always wins.)
+        swr_pen = max(0.0, m.get("max_swr", 99) - 1.0) * 3000.0
+        x_pen   = abs(m.get("center_x", 99)) * 5.0
+        return 5000.0 - swr_pen - x_pen
     # default composite
     return v2_scorer.score(**m)
 
