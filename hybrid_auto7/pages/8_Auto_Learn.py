@@ -70,19 +70,26 @@ with c2:
 
 polish = st.checkbox("Recover gain / F-B after hitting SWR target", value=True, key="al_polish")
 
-# ---- Element taper (tubing schedule) --------------------------------------
+# ---- Element taper (tubing schedule) — set BEFORE tuning -------------------
+STD_TAPER = [[0.625, 36.0], [0.5, 999.0]]   # standard commercial taper (default)
 TAPER_PATH = ROOT / "data/taper_v2.json"
-with st.expander("⚙️ Element taper / tubing schedule (aluminum)", expanded=False):
-    st.caption("One tube per line: `OD_inches, section_length_inches`, from element "
-               "CENTRE out to the TIP. Use a big length (e.g. 999) for the piece that "
-               "runs to the tip. Example for this antenna: `0.625, 36` then `0.5, 999`.")
-    try:
-        _cur_taper = json.loads(TAPER_PATH.read_text()).get("default", [[0.625, 36.0], [0.5, 999.0]])
-    except Exception:
-        _cur_taper = [[0.625, 36.0], [0.5, 999.0]]
-    _taper_text = "\n".join(f"{od}, {L}" for od, L in _cur_taper)
-    new_taper_text = st.text_area("Taper sections", value=_taper_text, key="al_taper", height=120)
-    if st.button("Save taper", key="al_save_taper"):
+st.markdown("### ⚙️ Tubing taper  ·  set this BEFORE you tune")
+st.caption("This is the aluminum tube schedule the optimizer and the .nec/.maa "
+           "export use for EVERY element. **Default = standard commercial taper "
+           "(0.625\" → 0.5\").** Change it here for a custom build, hit Save, then "
+           "run AUTO-LEARN. One tube per line: `OD_inches, section_length_inches`, "
+           "from the element CENTRE out to the TIP; use a big length (e.g. 999) for "
+           "the piece that runs to the tip.")
+try:
+    _cur_taper = json.loads(TAPER_PATH.read_text()).get("default", STD_TAPER)
+except Exception:
+    _cur_taper = STD_TAPER
+_taper_text = "\n".join(f"{od}, {L}" for od, L in _cur_taper)
+new_taper_text = st.text_area("Taper sections (OD_in, length_in — centre → tip)",
+                              value=_taper_text, key="al_taper", height=120)
+_tc1, _tc2 = st.columns(2)
+with _tc1:
+    if st.button("💾 Save taper", key="al_save_taper", use_container_width=True):
         sched = []
         for ln in new_taper_text.splitlines():
             ln = ln.strip()
@@ -94,9 +101,17 @@ with st.expander("⚙️ Element taper / tubing schedule (aluminum)", expanded=F
         if sched:
             TAPER_PATH.write_text(json.dumps({"default": sched}, indent=2))
             st.cache_data.clear()
-            st.success(f"Saved taper: {sched}  (re-run AUTO-LEARN to re-tune for it)")
+            st.success(f"Saved taper: {sched}  (re-run AUTO-LEARN to tune for it)")
+            st.rerun()
         else:
             st.error("Could not parse any 'OD, length' lines.")
+with _tc2:
+    if st.button("↩️ Reset to standard commercial (0.625\"/0.5\")",
+                 key="al_reset_taper", use_container_width=True):
+        TAPER_PATH.write_text(json.dumps({"default": STD_TAPER}, indent=2))
+        st.cache_data.clear()
+        st.success("Taper reset to standard commercial 0.625\"/0.5\".")
+        st.rerun()
 
 st.markdown("**Starting geometry (current)**")
 n_dirs_now = sum(1 for e in geo["elements"] if str(e["name"]).upper().startswith("DIR"))

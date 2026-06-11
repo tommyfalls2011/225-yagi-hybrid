@@ -1,39 +1,39 @@
 {
-  "elements": [
-    {
-      "name": "REF",
-      "position_in": 7.25,
-      "length_in": 220.0
-    },
-    {
-      "name": "XFRMR",
-      "position_in": 40.75,
-      "length_in": 191.0
-    },
-    {
-      "name": "DE",
-      "position_in": 47.25,
-      "length_in": 210.0
-    },
-    {
-      "name": "COUPLER",
-      "position_in": 64.0,
-      "length_in": 184.25
-    },
-    {
-      "name": "DIR1",
-      "position_in": 143.75,
-      "length_in": 190.5
-    },
-    {
-      "name": "DIR2",
-      "position_in": 189.0,
-      "length_in": 183.0
-    },
-    {
-      "name": "DIR3",
-      "position_in": 264.0,
-      "length_in": 189.75
-    }
-  ]
+ "elements": [
+  {
+   "name": "REF",
+   "position_in": 0.0,
+   "length_in": 220.0
+  },
+  {
+   "name": "XFRMR",
+   "position_in": 40.75,
+   "length_in": 191.0
+  },
+  {
+   "name": "DE",
+   "position_in": 47.25,
+   "length_in": 210.0
+  },
+  {
+   "name": "COUPLER",
+   "position_in": 70.25,
+   "length_in": 182.25
+  },
+  {
+   "name": "DIR1",
+   "position_in": 143.75,
+   "length_in": 190.5
+  },
+  {
+   "name": "DIR2",
+   "position_in": 189.0,
+   "length_in": 175.0
+  },
+  {
+   "name": "DIR3",
+   "position_in": 264.0,
+   "length_in": 191.75
+  }
+ ]
 }
