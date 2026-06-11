@@ -12,17 +12,19 @@ import datetime
 
 import streamlit as st
 
-st.set_page_config(page_title="Auto-Learn", layout="wide")
-st.title("Auto-Learn  ·  wideband self-tuner")
-st.caption("Closed-loop: warm-start from past best → minimise worst in-band SWR "
-           "→ recover gain/F-B → save to history. Built to hold a tight wideband "
-           "SWR target across the whole band.")
+st.set_page_config(page_title="Tune & Learn", layout="wide")
+st.title("Tune & Learn  ·  run · log · self-learn")
+st.caption("Bottom of the workflow: tune with the auto-matcher OR your own "
+           "procedure, log every move (good and bad), self-learn from past runs, "
+           "and report the result. Set the antenna up on the Antenna Setup page "
+           "first; pick mini-tunes / procedures on their pages.")
 
 ROOT = pathlib.Path.home() / "scripts/hybrid_auto7"
 GEO_PATH = ROOT / "data/current_geometry_v2.json"
 RULES_PATH = ROOT / "data/rules_v2.json"
 MINI_PATH = ROOT / "data/mini_tunes_v2.json"
 PROC_PATH = ROOT / "data/procedures_v2.json"
+SETUP_PATH = ROOT / "data/setup_v2.json"
 
 sys.path.insert(0, str(ROOT))
 from hyagi import v2_runner  # noqa: E402
@@ -37,12 +39,33 @@ def _load(p):
     return json.loads(pathlib.Path(p).read_text())
 
 
+def _load_setup():
+    try:
+        return json.loads(SETUP_PATH.read_text())
+    except Exception:
+        return {"n_directors": 3, "boom_mode": "fixed", "boom_length_in": None,
+                "height_ft": 30.0, "boom_diameter_in": 1.5, "grounding": "insulated"}
+
+
 geo = _load(str(GEO_PATH))
 rules = _load(str(RULES_PATH))
 minis = _load(str(MINI_PATH))
 procs = _load(str(PROC_PATH))
+setup = _load_setup()
 
 glb = rules["global"]
+# Apply construction options from Antenna Setup to live exports / previews too.
+v2_runner.GROUNDED = (str(setup.get("grounding", "insulated")) == "grounded")
+v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
+
+st.success(
+    f"From Antenna Setup → {len(geo['elements'])} elements · height "
+    f"{float(setup.get('height_ft', 30.0)):.0f} ft · boom "
+    f"{'FREE (tuner moves spacings)' if setup.get('boom_mode') == 'free' else 'FIXED'} · "
+    f"boom Ø {float(setup.get('boom_diameter_in', 1.5)):.2f}\" · "
+    f"elements {str(setup.get('grounding', 'insulated')).upper()}. "
+    f"Change these on the Antenna Setup page."
+)
 
 c1, c2 = st.columns(2)
 with c1:
@@ -63,10 +86,33 @@ with c1:
              "max return loss / safe high-power (50 kW+) operation; band edges may rise. "
              "Wideband holds the lowest worst-case SWR across the whole band.")
 with c2:
-    height_ft = st.number_input("Height (ft)", value=30.0, step=1.0, key="al_height")
+    height_ft = st.number_input("Height (ft)", value=float(setup.get("height_ft", 30.0)),
+                                step=1.0, key="al_height")
     band_points = st.slider("Band sweep points", 9, 41, 21, key="al_points",
                             help="More points = stricter wideband check (slower)")
     restarts = st.slider("Search restarts (escape local minima)", 0, 4, 1, key="al_restarts")
+
+st.markdown("#### Tuning method")
+tune_method = st.radio(
+    "How should it tune?",
+    ["matcher", "procedure"],
+    format_func=lambda m: ("Auto-matcher (coordinate descent — fast, hands-off)"
+                           if m == "matcher"
+                           else "Run MY procedure (your selected mini-tunes, step by step)"),
+    key="al_method", horizontal=False,
+    help="Auto-matcher tunes element lengths (and spacings if boom is FREE) to the "
+         "goal above. 'Run my procedure' executes the mini-tune sequence you built "
+         "on the Procedures page, logging and learning each move.")
+sel_proc_name = None
+if tune_method == "procedure":
+    if procs:
+        sel_proc_name = st.selectbox("Procedure to run", [p["name"] for p in procs],
+                                     key="al_proc_pick")
+        _p = next(p for p in procs if p["name"] == sel_proc_name)
+        st.caption("Steps: " + " → ".join(_p.get("steps", [])) if _p.get("steps") else "no steps")
+    else:
+        st.warning("No procedures defined yet — build one on the Procedures page, "
+                   "or use the Auto-matcher.")
 
 polish = st.checkbox("Recover gain / F-B after hitting SWR target", value=True, key="al_polish")
 
@@ -163,7 +209,7 @@ st.info(f"**Active tubing taper:** `{v2_runner.taper_signature()}`  — every tu
         f"if it doesn't match your real elements, then re-run.")
 
 st.markdown("---")
-if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run"):
+if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="al_run"):
     if band_high <= band_low:
         st.error("Band high must be greater than band low.")
         st.stop()
@@ -178,7 +224,12 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         log_lines.append(str(msg))
         log_box.code("\n".join(log_lines[-60:]), language="text")
 
-    procedure = procs[0] if procs else {"name": "matcher", "steps": []}
+    use_matcher = (tune_method == "matcher")
+    if use_matcher:
+        procedure = procs[0] if procs else {"name": "matcher", "steps": []}
+    else:
+        procedure = next((p for p in procs if p["name"] == sel_proc_name),
+                         {"name": "procedure", "steps": []})
     cfg = LearnConfig(
         project_name="current_geometry",
         height_ft=float(height_ft),
@@ -186,9 +237,12 @@ if st.button("AUTO-LEARN", type="primary", use_container_width=True, key="al_run
         target_max_swr=float(target_swr),
         band_sweep_points=int(band_points),
         max_generations=int(restarts) + 1,
-        use_matcher=True,
+        use_matcher=use_matcher,
         polish_gain=bool(polish),
         tune_goal=str(tune_goal),
+        tune_spacings=(str(setup.get("boom_mode", "fixed")) == "free"),
+        grounded=(str(setup.get("grounding", "insulated")) == "grounded"),
+        boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
     )
     started = datetime.datetime.now()
     with st.spinner("Self-learning… (one NEC2 solve per candidate; this can take a few minutes)"):

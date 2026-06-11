@@ -57,6 +57,9 @@ class LearnConfig:
     polish_gain: bool = True          # recover gain/F-B after hitting SWR target
     tune_goal: str = "wideband"       # "wideband" (min worst SWR) or "resonant"
                                       # (R->50, X->0 at centre for high power)
+    tune_spacings: bool = False       # "boom free": let the matcher move spacings
+    grounded: bool = False            # parasitics bonded to a metal boom
+    boom_diameter_in: float = 1.5     # boom OD (inches), used when grounded
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +299,11 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
     # Lock the scorer to the requested wideband SWR target.
     _set_swr_profile(cfg.swr_profile)
 
+    # Apply construction options (grounded/boom) so every solve, sweep, export
+    # and report uses the same physical model for this run.
+    v2_runner.GROUNDED = bool(getattr(cfg, "grounded", False))
+    v2_runner.BOOM_DIAMETER_IN = float(getattr(cfg, "boom_diameter_in", 1.5))
+
     # Make the optimizer score across the full band (not just 5 spot freqs) so
     # it can be driven to a wideband low-SWR target.
     v2_runner.EVAL_FREQ_POINTS = max(7, int(cfg.band_sweep_points))
@@ -373,6 +381,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                     polish_gain=cfg.polish_gain, log_fn=log_fn,
                     learned_start=learned_start, on_move=_sink,
                     goal=getattr(cfg, "tune_goal", "wideband"),
+                    tune_spacings=bool(getattr(cfg, "tune_spacings", False)),
                 )
             finally:
                 con.commit()

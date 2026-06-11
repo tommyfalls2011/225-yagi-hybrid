@@ -44,12 +44,16 @@ def _len_bounds(rules, name, default=(1.0, 9999.0)):
     return lo, hi
 
 
-def _build_dofs(elements, rules):
+def _build_dofs(elements, rules, tune_spacings=False):
     """Return (vec, bounds, director_names). vec/bounds keyed by DOF name.
 
     Positions are parametrised as gaps relative to the DE so the DE stays put
     and only the matching cell moves; director positions are held fixed and
-    only their lengths are tuned (keeps boom length / gain pattern stable)."""
+    only their lengths are tuned (keeps boom length / gain pattern stable).
+
+    tune_spacings=True ("boom free") additionally makes each director's gap to
+    the previous element a DOF, so the optimizer can move spacings / boom
+    length too, bounded by the rules spacings."""
     de = _el(elements, "DE")
     if de is None:
         raise ValueError("geometry has no DE element")
@@ -86,7 +90,38 @@ def _build_dofs(elements, rules):
         vec[f"{d}_len"] = float(_el(elements, d)["length_in"])
         bounds[f"{d}_len"] = _len_bounds(rules, d, (140.0, 215.0))
 
+    if tune_spacings:
+        # Boom-free: each director's gap to the previous element becomes a DOF.
+        ordered = sorted(director_names,
+                         key=lambda n: float(_el(elements, n)["position_in"]))
+        prev = _el(elements, "COUPLER") or de
+        prev_pos = float(prev["position_in"])
+        prev_name = str(prev["name"]).upper()
+        for d in ordered:
+            dpos = float(_el(elements, d)["position_in"])
+            vec[f"sp_{d}"] = round(dpos - prev_pos, 4)
+            bounds[f"sp_{d}"] = _spacing_bounds(rules, f"{prev_name}_{d}", (40.0, 120.0))
+            prev_pos, prev_name = dpos, d.upper()
+
     return vec, bounds, de_pos
+
+
+def _apply_spacings(e, vec):
+    """Boom-free: reposition directors cumulatively from their learned gaps."""
+    sp = {k[3:]: v for k, v in vec.items() if k.startswith("sp_")}
+    if not sp:
+        return
+    dirs = sorted([x for x in e if str(x["name"]).upper().startswith("DIR")],
+                  key=lambda x: float(x["position_in"]))
+    anchor = _el(e, "COUPLER") or _el(e, "DE")
+    prev_pos = float(anchor["position_in"])
+    for d in dirs:
+        g = sp.get(d["name"])
+        if g is not None:
+            prev_pos = round(prev_pos + g, 4)
+            d["position_in"] = prev_pos
+        else:
+            prev_pos = float(d["position_in"])
 
 
 def _apply(elements, vec, de_pos):
@@ -110,6 +145,7 @@ def _apply(elements, vec, de_pos):
     for key, val in vec.items():
         if key.endswith("_len") and key[:-4].upper().startswith("DIR"):
             _el(e, key[:-4])["length_in"] = val
+    _apply_spacings(e, vec)
     return e
 
 
@@ -235,7 +271,8 @@ def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
 def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
              points=21, restarts=2, steps=(8.0, 4.0, 2.0, 1.0, 0.5, 0.25),
              seed=12345, polish_gain=True, log_fn=print,
-             learned_start=None, move_log=None, on_move=None, goal="wideband"):
+             learned_start=None, move_log=None, on_move=None, goal="wideband",
+             tune_spacings=False):
     """Minimise band-max SWR across the band in rules['global'], then recover
     gain/F-B while holding the match.
 
@@ -243,6 +280,9 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     goal="resonant"  -> drive a true 50-ohm resonant match (R->50, X->0) AT the
                         operating centre (high-power: low reactance, high return
                         loss, low centre SWR), keeping the band edges in check.
+
+    tune_spacings=True -> "boom free": also move director spacings/positions
+                          (boom length floats), not just element lengths.
 
     learned_start: {dof: value} proven-good values from past runs to seed from.
     move_log: list that receives every candidate {dof,value,band_max_swr,accepted}.
@@ -254,7 +294,7 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     f_high = float(glb["freq_mhz_high"])
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
 
-    vec0, bounds, de_pos = _build_dofs(elements, rules)
+    vec0, bounds, de_pos = _build_dofs(elements, rules, tune_spacings=tune_spacings)
     if learned_start:
         n = 0
         for k, v in learned_start.items():

@@ -33,6 +33,15 @@ ALUMINUM_SIGMA = 2.5e7   # 6061-T6 conductivity, S/m (for NEC LD type-5 card)
 _SEG_TARGET_IN = 6.0     # target NEC segment length
 _DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 
+# Antenna construction options (set from the Setup / Tune page before tuning so
+# every solve, sweep, export and the performance report all use the same model).
+#   GROUNDED          -> True: parasitic elements are bonded to a metal boom of
+#                        BOOM_DIAMETER_IN (DE stays insulated/coax-fed); changes
+#                        the tuning vs the default insulated build.
+#   BOOM_DIAMETER_IN  -> boom outer diameter (inches), used when grounded.
+GROUNDED = False
+BOOM_DIAMETER_IN = 1.5
+
 
 def get_active_taper():
     """Active element taper schedule from data/taper_v2.json, else the default.
@@ -107,16 +116,29 @@ def _half_sections(half_len_m, taper):
     return secs
 
 
-def _emit_element(out, tag, p, L, H, taper):
+def _emit_element(out, tag, p, L, H, taper, split_center=False):
     """Append GW cards for one stepped-diameter element centred on the y axis at
-    boom position p, height H. Returns (last_tag, feed_tag, feed_seg)."""
+    boom position p, height H. Returns (last_tag, feed_tag, feed_seg).
+
+    split_center=True emits the centre section as TWO half-wires meeting at
+    (p,0,H) so that point is a NODE (used to bond a grounded element to the
+    boom). split_center=False (default) emits a single continuous centre wire
+    with the feed at its middle segment."""
     half = L / 2.0
     secs = _half_sections(half, taper)
     r0, l0 = secs[0]
-    nseg = max(3, int((2 * l0) / (_SEG_TARGET_IN * INCH))) | 1   # odd -> centre seg
-    tag += 1
-    out.append(f"GW {tag} {nseg} {p:.6f} {-l0:.6f} {H:.6f} {p:.6f} {l0:.6f} {H:.6f} {r0:.6f}")
-    feed_tag, feed_seg = tag, (nseg + 1) // 2
+    if split_center:
+        ns = max(2, int(l0 / (_SEG_TARGET_IN * INCH)))
+        tag += 1
+        out.append(f"GW {tag} {ns} {p:.6f} 0.000000 {H:.6f} {p:.6f} {l0:.6f} {H:.6f} {r0:.6f}")
+        feed_tag, feed_seg = tag, 1
+        tag += 1
+        out.append(f"GW {tag} {ns} {p:.6f} 0.000000 {H:.6f} {p:.6f} {-l0:.6f} {H:.6f} {r0:.6f}")
+    else:
+        nseg = max(3, int((2 * l0) / (_SEG_TARGET_IN * INCH))) | 1   # odd -> centre seg
+        tag += 1
+        out.append(f"GW {tag} {nseg} {p:.6f} {-l0:.6f} {H:.6f} {p:.6f} {l0:.6f} {H:.6f} {r0:.6f}")
+        feed_tag, feed_seg = tag, (nseg + 1) // 2
     inner = l0
     for (r, seglen) in secs[1:]:
         ns = max(2, int(seglen / (_SEG_TARGET_IN * INCH)))
@@ -129,7 +151,8 @@ def _emit_element(out, tag, p, L, H, taper):
 
 
 def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
-                   pattern=True, taper="auto", conductor_sigma=ALUMINUM_SIGMA):
+                   pattern=True, taper="auto", conductor_sigma=ALUMINUM_SIGMA,
+                   grounded=None, boom_diameter_in=None):
     """Build a NEC2 input deck for the tapered aluminium hybrid.
 
     taper="auto" -> read the active schedule from data/taper_v2.json.
@@ -141,26 +164,59 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
     """
     if taper == "auto":
         taper = get_active_taper()
+    if grounded is None:
+        grounded = GROUNDED
+    if boom_diameter_in is None:
+        boom_diameter_in = BOOM_DIAMETER_IN
     H = height_ft * FT
     out = ["CM hybrid_auto7 v2 (tapered Al)", "CE"]
     de_feed_tag = None
     de_feed_seg = None
     tag = 0
+    ground_nodes = []   # boom x-positions (m) of grounded (non-DE) elements
     for el in elements:
         p = float(el["position_in"]) * INCH
         L = float(el["length_in"]) * INCH
+        is_de = el["name"].upper() == "DE"
+        bond = bool(grounded) and not is_de
         if taper:
-            tag, ftag, fseg = _emit_element(out, tag, p, L, H, taper)
+            tag, ftag, fseg = _emit_element(out, tag, p, L, H, taper, split_center=bond)
         else:
             a = wire_radius_in * INCH
-            segs = max(11, (int(L / (10.0 * INCH))) | 1)
-            tag += 1
-            out.append(f"GW {tag} {segs} {p:.6f} {-L/2:.6f} {H:.6f} {p:.6f} {L/2:.6f} {H:.6f} {a:.6f}")
-            ftag, fseg = tag, (segs + 1) // 2
-        if el["name"].upper() == "DE":
+            if bond:
+                segs = max(3, (int((L / 2) / (10.0 * INCH))))
+                tag += 1
+                out.append(f"GW {tag} {segs} {p:.6f} 0.000000 {H:.6f} {p:.6f} {L/2:.6f} {H:.6f} {a:.6f}")
+                ftag, fseg = tag, 1
+                tag += 1
+                out.append(f"GW {tag} {segs} {p:.6f} 0.000000 {H:.6f} {p:.6f} {-L/2:.6f} {H:.6f} {a:.6f}")
+            else:
+                segs = max(11, (int(L / (10.0 * INCH))) | 1)
+                tag += 1
+                out.append(f"GW {tag} {segs} {p:.6f} {-L/2:.6f} {H:.6f} {p:.6f} {L/2:.6f} {H:.6f} {a:.6f}")
+                ftag, fseg = tag, (segs + 1) // 2
+        if bond:
+            ground_nodes.append(p)
+        if is_de:
             de_feed_tag, de_feed_seg = ftag, fseg
     if de_feed_tag is None:
         raise ValueError("No DE element")
+    # Grounded build: bond each grounded element's centre to a common metal boom
+    # (diameter boom_diameter_in) modelled just below the elements, with a short
+    # vertical drop wire per element.  The DE is left insulated/coax-fed.  This
+    # genuinely shifts the tuning vs the default insulated model.
+    if grounded and len(ground_nodes) >= 2:
+        boom_r = max(0.003, boom_diameter_in * INCH / 2.0)
+        drop = boom_r + 0.03
+        zb = H - drop
+        for x in ground_nodes:
+            tag += 1
+            out.append(f"GW {tag} 1 {x:.6f} 0.000000 {H:.6f} {x:.6f} 0.000000 {zb:.6f} {boom_r:.6f}")
+        xs = sorted(set(ground_nodes))
+        for a, b in zip(xs, xs[1:]):
+            tag += 1
+            nseg = max(1, int((b - a) / (_SEG_TARGET_IN * INCH)))
+            out.append(f"GW {tag} {nseg} {a:.6f} 0.000000 {zb:.6f} {b:.6f} 0.000000 {zb:.6f} {boom_r:.6f}")
     out.append("GE -1")
     if conductor_sigma:
         out.append(f"LD 5 0 0 0 {conductor_sigma:.4E}")
