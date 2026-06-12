@@ -268,6 +268,177 @@ def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
     return cur
 
 
+def _beam_metrics(els, rules, height_ft):
+    m = v2_runner.evaluate(els, rules, height_ft=height_ft)
+    return None if "error" in m else m
+
+
+def _beam_score(m, fb_weight):
+    # Reward gain + F/B, but keep the driving-point impedance in a matchable
+    # range so the driven cell can still finish the wideband match (an
+    # unconstrained beam wanders to a high-reactance point the cell can't fix).
+    R = float(m.get("center_r", 50.0))
+    X = float(m.get("center_x", 0.0))
+    pen = 0.0
+    if R < 22.0:
+        pen += (22.0 - R) * 0.30
+    if R > 110.0:
+        pen += (R - 110.0) * 0.10
+    pen += max(0.0, abs(X) - 55.0) * 0.10
+    return m["gain_dbi"] + fb_weight * m["fb_db"] - pen
+
+
+def _pos_bounds(cur, name, rules):
+    """Allowed boom-position range for a beam element, from the rules spacings,
+    keeping element order (reflector behind DE; directors after their inboard
+    neighbour and before the next one)."""
+    nm = str(name).upper()
+    de_pos = float(_el(cur, "DE")["position_in"])
+    if nm == "REF":
+        lo_g, hi_g = _spacing_bounds(rules, "REF_DE", (30.0, 90.0))
+        return de_pos - hi_g, de_pos - lo_g
+    dirs = sorted([e for e in cur if str(e["name"]).upper().startswith("DIR")],
+                  key=lambda e: float(e["position_in"]))
+    names = [str(d["name"]).upper() for d in dirs]
+    idx = names.index(nm)
+    prev = (_el(cur, "COUPLER") or _el(cur, "DE")) if idx == 0 else dirs[idx - 1]
+    prev_pos = float(prev["position_in"])
+    lo_g, hi_g = _spacing_bounds(rules, f"{str(prev['name']).upper()}_{nm}", (40.0, 120.0))
+    lo, hi = prev_pos + lo_g, prev_pos + hi_g
+    if idx < len(dirs) - 1:
+        hi = min(hi, float(dirs[idx + 1]["position_in"]) - 12.0)
+    return lo, max(lo, hi)
+
+
+def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn, fb_weight=0.5):
+    """Tune the BEAM (REF reflector + directors) for maximum gain + F/B, leaving
+    the matching cell to the match phase. This is the hybrid's whole point: the
+    reflector+directors form the beam, the driven cell forms the wideband match,
+    so the directors are NOT shortened to chase SWR."""
+    prev_pts = getattr(v2_runner, "EVAL_FREQ_POINTS", 3)
+    v2_runner.EVAL_FREQ_POINTS = 1          # gain/F-B at centre only -> fast
+    try:
+        cur = copy.deepcopy(elements)
+        m = _beam_metrics(cur, rules, height_ft)
+        if m is None:
+            return elements
+        best = _beam_score(m, fb_weight)
+        dirs = [e["name"] for e in cur if str(e["name"]).upper().startswith("DIR")]
+        len_names = (["REF"] if _el(cur, "REF") else []) + dirs
+        for step in (4.0, 2.0, 1.0):
+            improved, rounds = True, 0
+            while improved and rounds < 5:
+                improved, rounds = False, rounds + 1
+                # lengths of reflector + directors
+                for name in len_names:
+                    el = _el(cur, name)
+                    lo, hi = _len_bounds(rules, name, (140.0, 240.0))
+                    base = float(el["length_in"])
+                    for d in (step, -step):
+                        nl = round(min(hi, max(lo, base + d)), 3)
+                        if abs(nl - base) < 1e-9:
+                            continue
+                        trial = copy.deepcopy(cur)
+                        _el(trial, name)["length_in"] = nl
+                        mm = _beam_metrics(trial, rules, height_ft)
+                        if mm and _beam_score(mm, fb_weight) > best + 1e-4:
+                            best, cur, improved = _beam_score(mm, fb_weight), trial, True
+                # reflector spacing (always) + director spacings (boom-free)
+                pos_names = (["REF"] if _el(cur, "REF") else [])
+                if tune_spacings:
+                    pos_names += dirs
+                for name in pos_names:
+                    base = float(_el(cur, name)["position_in"])
+                    lo, hi = _pos_bounds(cur, name, rules)
+                    for d in (step, -step):
+                        npos = round(min(hi, max(lo, base + d)), 3)
+                        if abs(npos - base) < 1e-9:
+                            continue
+                        trial = copy.deepcopy(cur)
+                        _el(trial, name)["position_in"] = npos
+                        mm = _beam_metrics(trial, rules, height_ft)
+                        if mm and _beam_score(mm, fb_weight) > best + 1e-4:
+                            best, cur, improved = _beam_score(mm, fb_weight), trial, True
+            if log_fn:
+                mm = _beam_metrics(cur, rules, height_ft) or {}
+                log_fn(f"    [beam] step={step} gain={mm.get('gain_dbi', 0):.2f} "
+                       f"fb={mm.get('fb_db', 0):.2f}")
+        return cur
+    finally:
+        v2_runner.EVAL_FREQ_POINTS = prev_pts
+
+
+def _match_cell(cur, rules, height_ft, f_low, f_high, points, target, fc, steps,
+                log_fn, move_log, on_move):
+    """Tune ONLY the driven matching cell (DE / XFRMR / COUPLER lengths + gaps)
+    for minimum band-max SWR, holding the reflector + directors fixed."""
+    vec, bounds, de_pos = _build_dofs(cur, rules, tune_spacings=False)
+    for k in list(vec):                       # keep only the driven matching cell
+        base = k[:-4] if k.endswith(("_len", "_gap")) else k
+        if (k.startswith("sp_") or base.upper().startswith("DIR")
+                or base in ("ref",)):
+            vec.pop(k, None)
+            bounds.pop(k, None)
+    best_vec, _o, mx = _descend(vec, bounds, cur, de_pos, rules, height_ft,
+                                f_low, f_high, points, steps, target, log_fn,
+                                move_log, on_move, fc=fc, goal="wideband")
+    return _apply(cur, best_vec, de_pos), mx
+
+
+def _hybrid_overall(els, rules, height_ft, f_low, f_high, points, target):
+    """Combined hybrid quality: strong beam (gain + F/B) minus a penalty for any
+    SWR above target. Used to guarantee the hybrid run never returns something
+    worse than the cell-only-match baseline."""
+    m = v2_runner.evaluate(els, rules, height_ft=height_ft)
+    if "error" in m:
+        return -1e9, 99.0
+    _curve, mx, _av = v2_runner.band_swr_curve(els, f_low, f_high, points, height_ft)
+    swr_pen = max(0.0, mx - target) * 12.0
+    return m["gain_dbi"] + 0.4 * m["fb_db"] - swr_pen, mx
+
+
+def _optimize_hybrid(elements, rules, height_ft, target_swr, points, f_low,
+                     f_high, fc, tune_spacings, steps, log_fn, move_log, on_move,
+                     iters=3):
+    """Hybrid optimiser, made robust:
+
+    1. baseline = match the DRIVEN CELL only (directors frozen) -> keeps the
+       beam the user built and flattens SWR with the cell, the way a hybrid is
+       meant to work.
+    2. then try to IMPROVE the beam (reflector + directors -> more gain/F-B,
+       matchability-guarded) and re-match the cell, keeping the change only if
+       the combined quality goes up. Never returns worse than the baseline.
+    """
+    cur = copy.deepcopy(elements)
+    cur, _mx = _match_cell(cur, rules, height_ft, f_low, f_high, points,
+                           target_swr, fc, steps, log_fn, move_log, on_move)
+    best = copy.deepcopy(cur)
+    best_score, best_mx = _hybrid_overall(best, rules, height_ft, f_low, f_high,
+                                          points, target_swr)
+    if log_fn:
+        gm = v2_runner.evaluate(best, rules, height_ft=height_ft)
+        log_fn(f"  [hybrid] baseline (cell match): band_max_swr={best_mx:.3f}  "
+               f"gain={gm.get('gain_dbi', 0):.2f}  fb={gm.get('fb_db', 0):.2f}")
+    for it in range(iters):
+        trial = _optimize_beam(cur, rules, height_ft, tune_spacings, log_fn)
+        trial, mx = _match_cell(trial, rules, height_ft, f_low, f_high, points,
+                                target_swr, fc, steps, log_fn, move_log, on_move)
+        score, mx = _hybrid_overall(trial, rules, height_ft, f_low, f_high,
+                                    points, target_swr)
+        gm = v2_runner.evaluate(trial, rules, height_ft=height_ft)
+        if log_fn:
+            log_fn(f"  [hybrid] iter {it + 1}: band_max_swr={mx:.3f}  "
+                   f"gain={gm.get('gain_dbi', 0):.2f}  fb={gm.get('fb_db', 0):.2f}  "
+                   f"score={score:+.2f} (best {best_score:+.2f})")
+        if score > best_score + 1e-3:
+            best, best_score, best_mx = copy.deepcopy(trial), score, mx
+            cur = trial
+        else:
+            break                              # no further improvement -> stop
+    curve, mx, _av = v2_runner.band_swr_curve(best, f_low, f_high, points, height_ft)
+    return best, mx, curve
+
+
 def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
              points=21, restarts=2, steps=(8.0, 4.0, 2.0, 1.0, 0.5, 0.25),
              seed=12345, polish_gain=True, log_fn=print,
@@ -280,6 +451,9 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     goal="resonant"  -> drive a true 50-ohm resonant match (R->50, X->0) AT the
                         operating centre (high-power: low reactance, high return
                         loss, low centre SWR), keeping the band edges in check.
+    goal="hybrid"    -> alternate a BEAM phase (reflector + directors -> max
+                        gain/F-B) with a MATCH phase (driven cell -> min wideband
+                        SWR); keeps a strong pattern AND a flat wideband match.
 
     tune_spacings=True -> "boom free": also move director spacings/positions
                           (boom length floats), not just element lengths.
@@ -293,6 +467,11 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     f_low = float(glb["freq_mhz_low"])
     f_high = float(glb["freq_mhz_high"])
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
+
+    if goal == "hybrid":
+        return _optimize_hybrid(elements, rules, height_ft, target_swr, points,
+                                f_low, f_high, fc, tune_spacings, steps, log_fn,
+                                move_log, on_move, iters=max(2, int(restarts) + 1))
 
     vec0, bounds, de_pos = _build_dofs(elements, rules, tune_spacings=tune_spacings)
     if learned_start:

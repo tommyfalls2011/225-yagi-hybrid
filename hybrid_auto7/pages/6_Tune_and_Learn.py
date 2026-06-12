@@ -78,13 +78,17 @@ with c1:
                                  step=0.01, format="%.2f", key="al_target")
     tune_goal = st.selectbox(
         "Tune goal",
-        ["wideband", "resonant"],
-        format_func=lambda g: ("Wideband SWR (flattest across band)" if g == "wideband"
-                               else "Resonant match — high power (R≈50, X≈0 at center)"),
+        ["hybrid", "wideband", "resonant"],
+        format_func=lambda g: (
+            "Hybrid — strong beam + flat wideband match (recommended)" if g == "hybrid"
+            else "Wideband SWR only (flattest across band — can cost gain/F-B)" if g == "wideband"
+            else "Resonant match — high power (R≈50, X≈0 at center)"),
         key="al_goal",
-        help="Resonant drives reactance X→0 and R→50 at the center frequency for "
-             "max return loss / safe high-power (50 kW+) operation; band edges may rise. "
-             "Wideband holds the lowest worst-case SWR across the whole band.")
+        help="Hybrid alternates a BEAM phase (reflector + directors → max gain & "
+             "front-to-back) with a MATCH phase (driven XFRMR/DE/COUPLER cell → "
+             "flat wideband SWR), so the directors are NOT shortened to chase SWR. "
+             "Wideband optimizes SWR alone (can flatten the beam). Resonant drives "
+             "X→0 / R→50 at center for safe high-power (50 kW+) operation.")
 with c2:
     height_ft = st.number_input("Height (ft)", value=float(setup.get("height_ft", 30.0)),
                                 step=1.0, key="al_height")
