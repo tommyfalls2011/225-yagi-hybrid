@@ -257,6 +257,25 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   elements (correct physics); grounded solves are slower (more wires).
 - Did NOT touch taper_v2.json / current_geometry_v2.json (user-owned).
 
+## HYBRID TUNE GOAL — beam + match (2026-06-09, cont.) — commit bda5c10
+- User: "you can [have flat SWR AND high gain/F-B] with hybrid, you're treating it
+  like a Yagi." CORRECT. Plain wideband matcher tuned director LENGTHS to chase SWR
+  -> flattened the beam (gain 12.47 dBi, F/B 10.28). Hybrid: driven cell
+  (XFRMR/DE/COUPLER) makes the wideband match; reflector+directors make the beam.
+- NEW goal='hybrid' (default): (1) match DRIVEN CELL only, directors frozen (keeps
+  beam); (2) matchability-guarded beam refinement (REF+directors -> more gain/F-B)
+  + re-match, kept only if combined quality improves; never worse than baseline
+  (_hybrid_overall guard).
+- Result 7-el @22ft: gain 13.55 dBi, F/B 13.39 dB, band-max 1.226 (vs 12.47/10.28/
+  1.18) => +1 dB gain, +3 dB F/B for 0.05 more SWR.
+- match_opt: _match_cell (DE/XFRMR/COUPLER only), _optimize_beam (REF+directors,
+  impedance-penalized), _hybrid_overall (regression guard). Tune&Learn goal:
+  Hybrid (recommended)/Wideband/Resonant.
+- nec2c vanished from PATH again mid-session; `sudo apt-get install -y nec2c` fixed.
+- Pre-existing broken tests (cell_rules/horizon_rules/director_rules import missing
+  hyagi.* modules) fail on collection, UNRELATED; the 13 relevant tests pass.
+
+
 
 
 ## NEXT
