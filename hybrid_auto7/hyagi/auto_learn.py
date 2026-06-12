@@ -327,11 +327,28 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
 
     try:
         # Warm start
+        original = copy.deepcopy(elements)
         elements, warm_id = warm_start_geometry(con, cfg, elements)
+        if (warm_id is not None
+                and str(getattr(cfg, "tune_goal", "")) == "hybrid"):
+            # The hybrid needs to begin from full-length (beam) directors. The
+            # SWR-ranked warm-start can hand it a pattern-degraded geometry (low
+            # SWR but flattened beam), which the cell can't recover. Compare on
+            # BEAM strength (gain + F/B, with the same matchability guard the
+            # optimiser uses) — the cell will handle SWR — and keep the warm-start
+            # only if its beam beats the current geometry's.
+            mb_warm = match_opt._beam_metrics(elements, rules, cfg.height_ft)
+            mb_orig = match_opt._beam_metrics(original, rules, cfg.height_ft)
+            q_warm = match_opt._beam_score(mb_warm, 0.5) if mb_warm else -1e9
+            q_orig = match_opt._beam_score(mb_orig, 0.5) if mb_orig else -1e9
+            if q_orig >= q_warm:
+                elements, warm_id = original, None
+                log_fn("[warm-start] current geometry has the stronger beam — "
+                       "starting from it (skipping a pattern-degraded warm-start)")
         if warm_id is not None:
             log_fn(f"[warm-start] resuming from DB run #{warm_id} for '{cfg.project_name}'")
         else:
-            log_fn(f"[warm-start] no prior history for '{cfg.project_name}', starting fresh")
+            log_fn(f"[warm-start] starting from the current geometry for '{cfg.project_name}'")
 
         memory = MoveMemory()
         current = copy.deepcopy(elements)
