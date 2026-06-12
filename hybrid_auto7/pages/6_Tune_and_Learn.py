@@ -159,20 +159,8 @@ with _tc2:
         st.success("Taper reset to standard commercial 0.625\"/0.5\".")
         st.rerun()
 
-st.markdown("**Starting geometry (current)**")
+st.markdown("**Starting geometry (current)**  ·  build/reseed on the Antenna Setup page")
 n_dirs_now = sum(1 for e in geo["elements"] if str(e["name"]).upper().startswith("DIR"))
-with st.expander(f"🔧 Build geometry — element count (now: {len(geo['elements'])} total, {n_dirs_now} directors)", expanded=False):
-    st.caption("A hybrid is always REF + XFRMR + DE + COUPLER, plus the directors "
-               "you choose. 0–14 directors = 4–18 total elements. Building reseeds a "
-               "fresh wavelength-scaled geometry; then run AUTO-LEARN to tune it.")
-    n_dir = st.slider("Number of directors", 0, 14, n_dirs_now, key="al_ndir")
-    st.caption(f"→ {n_dir + 4} total elements (REF, XFRMR, DE, COUPLER + {n_dir} directors)")
-    if st.button("Build / reseed geometry", key="al_build"):
-        new_geo = hybrid_seed.build_geometry(n_dir, center_mhz=float(glb.get("freq_mhz_center", 27.195)))
-        GEO_PATH.write_text(json.dumps(new_geo, indent=2))
-        st.cache_data.clear()
-        st.success(f"Built {len(new_geo['elements'])}-element hybrid. Scroll down and hit AUTO-LEARN to tune it.")
-        st.rerun()
 
 
 gcols = st.columns(min(4, len(geo["elements"])) or 1)
@@ -298,6 +286,10 @@ if res:
         f"band-max SWR {res['band_max']:.3f}  ·  gain {res['gain']:.2f} dBi  ·  "
         f"F/B {res['fb']:.2f} dB  ·  score {res['score']:+.1f}  ·  {res['elapsed']:.0f}s"
     )
+    if res_names == cur_names and res["geometry"] != geo["elements"]:
+        st.warning("📌 This tune is **NOT saved yet.** Click **Adopt tuned geometry "
+                   "as current** below to make it your antenna — the **Report** page "
+                   "(and the next warm-start) reads the ADOPTED geometry, not this panel.")
     cc1, cc2, cc3, cc4 = st.columns(4)
     cc1.metric("Center R", f"{res.get('center_r', 0):.1f} Ω")
     cc2.metric("Center X (reactance)", f"{res.get('center_x', 0):+.2f} Ω",
