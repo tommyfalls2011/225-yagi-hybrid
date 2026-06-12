@@ -257,6 +257,24 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
   elements (correct physics); grounded solves are slower (more wires).
 - Did NOT touch taper_v2.json / current_geometry_v2.json (user-owned).
 
+## HYBRID WARM-START SABOTAGE FIX (2026-06-09, cont.) — commit d0b0e2c
+- Symptom: every hybrid run came out 12.47 dBi / FB 10.28 / 1.185 — identical to the
+  bad plain-matcher result. CAUSE: warm_start_geometry ranks by SWR, so it loaded an
+  earlier low-SWR-but-flat-beam run (#27) and the hybrid tuned from THAT degraded
+  geometry; cell-match can't recover a beam whose directors are already short.
+- FIX (auto_learn.run_learning): for goal='hybrid', keep the warm-start only if its
+  BEAM (gain + 0.5*F/B via match_opt._beam_score, incl. matchability guard) beats the
+  current geometry's; else start from the current geometry. (NOT _hybrid_overall —
+  that SWR-penalizes the not-yet-matched seed and wrongly prefers the degraded run.)
+- VERIFIED e2e: fresh 7-el seed -> gain 14.13 dBi / F-B 18.10 dB / band-max 1.194 /
+  center X -0.43 (was 12.47/10.28/1.185). This is the strong-beam + flat-wideband +
+  near-resonant result the user wanted.
+- User mentioned other OWA software; the .nec/.maa export already bridges to
+  MMANA-GAL/4nec2 if they prefer those optimizers.
+- ACTION FOR USER: pull; on Setup hit Build/reseed for full-length directors; Tune &
+  Learn with Hybrid goal; Adopt; Report.
+
+
 ## HYBRID TUNE GOAL — beam + match (2026-06-09, cont.) — commit bda5c10
 - User: "you can [have flat SWR AND high gain/F-B] with hybrid, you're treating it
   like a Yagi." CORRECT. Plain wideband matcher tuned director LENGTHS to chase SWR
