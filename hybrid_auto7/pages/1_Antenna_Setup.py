@@ -30,6 +30,7 @@ SETUP_PATH = ROOT / "data/setup_v2.json"
 sys.path.insert(0, str(ROOT))
 from hyagi import hybrid_seed  # noqa: E402
 from hyagi import exporters  # noqa: E402
+from hyagi.units import fmt_in  # noqa: E402
 
 DEFAULT = {"n_directors": 3, "boom_mode": "fixed", "boom_length_in": None,
            "height_ft": 30.0, "boom_diameter_in": 1.5, "grounding": "insulated"}
@@ -116,8 +117,8 @@ if els:
     cols = st.columns(min(4, len(els)))
     for i, e in enumerate(els):
         with cols[i % len(cols)]:
-            st.caption(f"`{e['name']}`  pos={float(e['position_in']):.1f} in  "
-                       f"len={float(e['length_in']):.1f} in")
+            st.caption(f"`{e['name']}`  pos {fmt_in(e['position_in'])}  "
+                       f"len {fmt_in(e['length_in'])}")
 else:
     st.info("No geometry yet — set the element count and hit Build / reseed.")
 
@@ -125,10 +126,11 @@ else:
 st.markdown("---")
 st.markdown("### 📥 Import geometry from MMANA-GAL (`.maa`)")
 st.caption("If you've micro-tuned an antenna in MMANA-GAL, upload its `.maa` "
-           "file here to replace the current geometry with the MMANA wires. "
-           "Element span is read on Y, boom on X, height on Z; the DE is the "
-           "fed wire. Other pages will then tune / report against the imported "
-           "lengths and positions.")
+           "file here to compare side-by-side and (optionally) adopt the new "
+           "geometry as the working antenna.  Element span is read on Y, boom "
+           "on X, height on Z; the DE is the fed wire (`w<n>c`).  Tune & Learn "
+           "and Report then run against the imported lengths and positions, so "
+           "what hybrid_auto7 shows == what MMANA-GAL shows.")
 up = st.file_uploader("Upload .maa file", type=["maa", "txt"], key="su_maa_upload")
 if up is not None:
     try:
@@ -137,11 +139,32 @@ if up is not None:
         new_els = parsed["elements"]
         st.success(f"Parsed {len(new_els)} elements from `{up.name}` "
                    f"(centre {parsed.get('center_mhz') or '?'} MHz).")
-        prev_cols = st.columns(min(4, len(new_els)))
-        for i, e in enumerate(new_els):
-            with prev_cols[i % len(prev_cols)]:
-                st.caption(f"`{e['name']}`  pos={e['position_in']:.2f} in  "
-                           f"len={e['length_in']:.2f} in")
+
+        # Side-by-side diff (per element, by name) vs the current geometry --
+        # so the user can see exactly what MMANA-GAL changed during their
+        # micro-tune.  Lookup by name keeps it sensible even if the boom
+        # length shifted between the two geometries.
+        cur_by_name = {str(e["name"]).upper(): e for e in els}
+        st.markdown("**Imported vs current** (delta = imported − current)")
+        diff_rows = []
+        for e in new_els:
+            nm = str(e["name"]).upper()
+            old = cur_by_name.get(nm)
+            old_pos = float(old["position_in"]) if old else None
+            old_len = float(old["length_in"]) if old else None
+            d_pos = (e["position_in"] - old_pos) if old_pos is not None else None
+            d_len = (e["length_in"] - old_len) if old_len is not None else None
+            diff_rows.append({
+                "Element": nm,
+                "pos (current)": fmt_in(old_pos) if old_pos is not None else "—",
+                "pos (imported)": fmt_in(e["position_in"]),
+                "Δ pos": fmt_in(d_pos) if d_pos is not None else "—",
+                "len (current)": fmt_in(old_len) if old_len is not None else "—",
+                "len (imported)": fmt_in(e["length_in"]),
+                "Δ len": fmt_in(d_len) if d_len is not None else "—",
+            })
+        st.dataframe(diff_rows, hide_index=True, use_container_width=True)
+
         if st.button("✅ Adopt imported geometry as current",
                      type="primary", key="su_adopt_maa"):
             GEO_PATH.write_text(json.dumps({"elements": new_els}, indent=2))

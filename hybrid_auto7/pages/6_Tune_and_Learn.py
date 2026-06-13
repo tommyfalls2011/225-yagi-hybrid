@@ -31,6 +31,7 @@ from hyagi import v2_runner  # noqa: E402
 from hyagi import perf_report  # noqa: E402
 from hyagi import hybrid_seed  # noqa: E402
 from hyagi import exporters  # noqa: E402
+from hyagi.units import fmt_in  # noqa: E402
 from hyagi.auto_learn import LearnConfig, run_learning  # noqa: E402
 
 
@@ -193,7 +194,8 @@ n_dirs_now = sum(1 for e in geo["elements"] if str(e["name"]).upper().startswith
 gcols = st.columns(min(4, len(geo["elements"])) or 1)
 for i, e in enumerate(geo["elements"]):
     with gcols[i % len(gcols)]:
-        st.caption(f"`{e['name']}`  pos={float(e['position_in']):.1f}  len={float(e['length_in']):.1f}")
+        st.caption(f"`{e['name']}`  pos {fmt_in(e['position_in'])}  "
+                   f"len {fmt_in(e['length_in'])}")
 
 with st.expander("📤 Export CURRENT geometry to .nec / .maa", expanded=False):
     st.caption("Export the current geometry as-is (no tuning needed) to open in "
@@ -353,7 +355,7 @@ if res:
             ("Elevation beamwidth (−3 dB)", f"{rep['el_beamwidth_deg']}°" if rep['el_beamwidth_deg'] else "—"),
             ("Take-off (peak elevation) angle", f"{rep['takeoff_deg']:.1f}°"),
             ("Radiation efficiency", f"{rep['efficiency_pct']:.1f}%  (lossless-wire model)" if rep['efficiency_pct'] is not None else "—"),
-            ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {rep['boom_in']:.1f} in ({rep['boom_in']/12:.1f} ft)"),
+            ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {fmt_in(rep['boom_in'])}"),
             ("Resonant (min-SWR) freq", f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
             ("In-band max SWR", f"{rep['band_max_swr']:.3f}:1  ({rep['band_low_mhz']:.3f}–{rep['band_high_mhz']:.3f} MHz)"),
             ("Bandwidth ≤ 1.2:1", _bw(rep['bw_swr_1p2'])),
@@ -367,9 +369,24 @@ if res:
                            file_name="auto_learn_report.json",
                            key="al_dl_report")
 
-    st.markdown("**Tuned geometry**")
-    for e in res["geometry"]:
-        st.caption(f"  {e['name']:<8} pos={float(e['position_in']):7.2f} in  len={float(e['length_in']):7.2f} in")
+    st.markdown("**Tuned geometry**  ·  imperial (ft / in / 16ths)")
+    tuned = sorted(res["geometry"], key=lambda e: float(e["position_in"]))
+    rows_geom = []
+    for i, e in enumerate(tuned):
+        # Spacing to the next element along the boom -- this is what you'd
+        # mark on the boom with a tape measure on construction day.
+        spacing = (float(tuned[i + 1]["position_in"]) - float(e["position_in"])
+                   if i + 1 < len(tuned) else None)
+        rows_geom.append({
+            "Element": e["name"],
+            "Boom position": fmt_in(e["position_in"]),
+            "Overall length (tip-to-tip)": fmt_in(e["length_in"]),
+            "Half-length (centre→tip)": fmt_in(float(e["length_in"]) / 2.0),
+            "Spacing to next": fmt_in(spacing) if spacing is not None else "—",
+        })
+    st.dataframe(rows_geom, hide_index=True, use_container_width=True)
+    boom_in = float(tuned[-1]["position_in"]) - float(tuned[0]["position_in"])
+    st.caption(f"Boom length (REF → last director): **{fmt_in(boom_in)}**")
 
     a1, a2 = st.columns(2)
     with a1:

@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from hyagi import v2_runner  # noqa: E402
 from hyagi import perf_report  # noqa: E402
 from hyagi import exporters  # noqa: E402
+from hyagi.units import fmt_in, fmt_inches_only  # noqa: E402
 
 
 @st.cache_data(ttl=2)
@@ -93,7 +94,7 @@ rows = [
     ("Elevation beamwidth (−3 dB)", f"{rep['el_beamwidth_deg']}°" if rep['el_beamwidth_deg'] else "—"),
     ("Take-off (peak elevation) angle", f"{rep['takeoff_deg']:.1f}°"),
     ("Radiation efficiency", f"{rep['efficiency_pct']:.1f}%" if rep['efficiency_pct'] is not None else "—"),
-    ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {rep['boom_in']:.1f} in ({rep['boom_in']/12:.1f} ft)"),
+    ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {fmt_in(rep['boom_in'])}"),
     ("Resonant (min-SWR) freq", f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
     ("In-band max SWR", f"{rep['band_max_swr']:.3f}:1  ({rep['band_low_mhz']:.3f}–{rep['band_high_mhz']:.3f} MHz)"),
     ("Bandwidth ≤ 1.2:1", _bw(rep['bw_swr_1p2'])),
@@ -104,23 +105,39 @@ st.markdown("### Performance")
 st.markdown("| Metric | Value |\n|---|---|\n" + "\n".join(f"| {a} | {b} |" for a, b in rows))
 
 # ---- Cut sheet -------------------------------------------------------------
-st.markdown("### Cut sheet (build numbers)")
+st.markdown("### Cut sheet (build numbers · ft / in / 16ths)")
 taper = v2_runner.get_active_taper()
 INCH = v2_runner.INCH
 cut_rows = []
 els_sorted = sorted(els, key=lambda e: float(e["position_in"]))
 p0 = float(els_sorted[0]["position_in"])
-for e in els_sorted:
+for i, e in enumerate(els_sorted):
     L = float(e["length_in"])
     half_m = (L * INCH) / 2.0
     secs = v2_runner._half_sections(half_m, taper) if taper else []
-    sect_txt = " + ".join(f"{(r*2)/INCH:.3f}\"OD×{(ln/INCH):.1f}\"" for r, ln in secs)
-    cut_rows.append((e["name"], f"{L:.2f}", f"{float(e['position_in']) - p0:.2f}", sect_txt or "uniform"))
-st.markdown("| Element | Overall length (in) | Boom position (in) | Tubing (centre→tip, per half) |\n"
-            "|---|---|---|---|\n" +
-            "\n".join(f"| {n} | {L} | {pos} | {s} |" for n, L, pos, s in cut_rows))
-st.caption("Tubing sections are per HALF element, from the centre out to the tip "
-           "(mirror for the other half). Overlap/insertion not included.")
+    sect_txt = " + ".join(
+        f"{(r*2)/INCH:.3f}\"OD × {fmt_in(ln/INCH)}" for r, ln in secs
+    )
+    pos_in = float(e["position_in"]) - p0
+    spacing = (float(els_sorted[i + 1]["position_in"]) - float(e["position_in"])
+               if i + 1 < len(els_sorted) else None)
+    cut_rows.append((
+        e["name"],
+        fmt_inches_only(L),
+        fmt_in(L / 2.0),
+        fmt_in(pos_in),
+        fmt_in(spacing) if spacing is not None else "—",
+        sect_txt or "uniform",
+    ))
+st.markdown(
+    "| Element | Overall length | Half (centre→tip) | Boom position | Spacing → next | Tubing (centre→tip, per half) |\n"
+    "|---|---|---|---|---|---|\n" +
+    "\n".join(f"| {n} | {L} | {H} | {pos} | {sp} | {s} |"
+              for n, L, H, pos, sp, s in cut_rows))
+boom_len = float(els_sorted[-1]["position_in"]) - float(els_sorted[0]["position_in"])
+st.caption(f"**Boom length (REF → last director): {fmt_in(boom_len)}**.  "
+           "Tubing sections are per HALF element, from the centre out to the tip "
+           "(mirror for the other half). Overlap / insertion not included.")
 
 # ---- SWR curve -------------------------------------------------------------
 f_low = float(glb.get("freq_mhz_low", 26.665))
