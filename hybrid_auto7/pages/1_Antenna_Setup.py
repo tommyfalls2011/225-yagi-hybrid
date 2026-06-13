@@ -63,10 +63,34 @@ with c1:
     boom_mode = st.radio(
         "Boom length", ["fixed", "free"],
         index=0 if setup.get("boom_mode", "fixed") == "fixed" else 1,
-        format_func=lambda m: ("FIXED — keep element positions as built (tune lengths only)"
+        format_func=lambda m: ("FIXED — boom is locked to a length; nothing can "
+                               "exceed it (tuner moves lengths only)"
                                if m == "fixed"
                                else "FREE — let the tuner move spacings / boom length"),
         key="su_boommode")
+
+    # Locked boom length (only when FIXED).  Stored as boom_length_in in the
+    # setup JSON; passed into the seeder + import + tuner so directors are
+    # always compressed to fit instead of letting the geometry drift past the
+    # physical boom the user actually built.
+    cur_span_in = (max(float(e["position_in"]) for e in geo["elements"])
+                   if geo.get("elements") else 264.0)
+    _default_lock_ft = (float(setup["boom_length_in"]) / 12.0
+                        if setup.get("boom_length_in") else
+                        round(cur_span_in / 12.0, 2))
+    if boom_mode == "fixed":
+        boom_length_ft = st.number_input(
+            "Boom length (ft) — HARD CAP", min_value=2.0, max_value=120.0,
+            value=float(_default_lock_ft), step=0.25, format="%.2f",
+            key="su_boomlen_ft",
+            help="With boom LOCKED, no element can exceed this distance from "
+                 "the reflector. Build/reseed and .maa import both compress to "
+                 "fit; the tuner only moves lengths (positions are held).")
+        st.caption(f"→ locked at **{fmt_in(boom_length_ft * 12.0)}**")
+    else:
+        boom_length_ft = None
+        st.caption("Boom is FREE — the tuner can grow / shrink the boom as needed.")
+
     boom_dia = st.number_input("Boom diameter (inches)",
                                value=float(setup.get("boom_diameter_in", 1.5)),
                                min_value=0.25, max_value=6.0, step=0.125, format="%.3f",
@@ -91,25 +115,65 @@ st.markdown("---")
 b1, b2 = st.columns(2)
 with b1:
     if st.button("💾 Save setup", type="primary", use_container_width=True, key="su_save"):
-        SETUP_PATH.write_text(json.dumps({
+        # Persist the boom lock as inches (single canonical unit).  `free` mode
+        # clears the lock so the tuner is allowed to move spacings.
+        _save = {
             "n_directors": int(n_dir),
             "boom_mode": str(boom_mode),
-            "boom_length_in": setup.get("boom_length_in"),
+            "boom_length_in": (float(boom_length_ft) * 12.0
+                               if (boom_mode == "fixed" and boom_length_ft) else None),
             "height_ft": float(height_ft),
             "boom_diameter_in": float(boom_dia),
             "grounding": str(grounding),
-        }, indent=2))
+        }
+        SETUP_PATH.write_text(json.dumps(_save, indent=2))
         st.success("Setup saved. Element count applies after you Build / reseed "
                    "(if you changed it). Height / boom / grounding apply on the "
                    "next tune.")
 with b2:
     if st.button("🛠️ Build / reseed geometry to this element count",
                  use_container_width=True, key="su_build"):
-        new_geo = hybrid_seed.build_geometry(int(n_dir), center_mhz=center_mhz)
+        # Pass the locked boom length so the seeder COMPRESSES director spacings
+        # to fit; nothing can exceed it.
+        max_boom_in = (float(boom_length_ft) * 12.0
+                       if (boom_mode == "fixed" and boom_length_ft) else None)
+        new_geo = hybrid_seed.build_geometry(int(n_dir), center_mhz=center_mhz,
+                                             max_boom_in=max_boom_in)
         GEO_PATH.write_text(json.dumps(new_geo, indent=2))
-        st.success(f"Built a fresh {len(new_geo['elements'])}-element hybrid. "
-                   f"Now work down to Tune & Learn to tune it.")
+        last_pos = max(float(e["position_in"]) for e in new_geo["elements"])
+        msg = (f"Built a fresh {len(new_geo['elements'])}-element hybrid "
+               f"(boom span {fmt_in(last_pos)}).")
+        if max_boom_in:
+            msg += f"  Compressed to fit the locked {fmt_in(max_boom_in)} boom."
+        st.success(msg + "  Now work down to Tune & Learn to tune it.")
         st.rerun()
+
+# ---- Boom-lock enforcement banner -----------------------------------------
+# If the user has the boom LOCKED and the current geometry overflows it,
+# offer a one-click rescale that compresses director spacings to fit.  This
+# catches imported .maa files, leftover geometries from a longer boom, and
+# any seed that pre-dated the lock.
+if boom_mode == "fixed" and boom_length_ft and geo.get("elements"):
+    locked_in = float(boom_length_ft) * 12.0
+    actual_span = max(float(e["position_in"]) for e in geo["elements"]) \
+        - min(float(e["position_in"]) for e in geo["elements"])
+    if actual_span > locked_in + 0.5:        # >1/2" over -> notify
+        st.warning(
+            f"⚠️ Current geometry boom span is **{fmt_in(actual_span)}**, "
+            f"longer than the locked **{fmt_in(locked_in)}** boom."
+        )
+        if st.button("📏 Rescale positions to fit the locked boom",
+                     key="su_rescale_to_boom", use_container_width=True):
+            els_now = sorted(geo["elements"], key=lambda e: float(e["position_in"]))
+            p0 = float(els_now[0]["position_in"])
+            scale = locked_in / max(1e-9, actual_span)
+            for e in els_now:
+                e["position_in"] = round(p0 + (float(e["position_in"]) - p0) * scale, 3)
+            GEO_PATH.write_text(json.dumps({"elements": els_now}, indent=2))
+            st.cache_data.clear()
+            st.success(f"Rescaled positions by ×{scale:.4f}.  Boom span is now "
+                       f"{fmt_in(locked_in)}.  Re-tune lengths on Tune & Learn.")
+            st.rerun()
 
 st.markdown("### Current geometry")
 els = geo.get("elements", [])
@@ -165,17 +229,47 @@ if up is not None:
             })
         st.dataframe(diff_rows, hide_index=True, use_container_width=True)
 
+        # Boom-lock check on import: warn if the .maa overruns the locked
+        # boom, and offer an inline rescale on adoption.
+        imp_span = (max(e["position_in"] for e in new_els)
+                    - min(e["position_in"] for e in new_els))
+        rescale_on_adopt = False
+        if boom_mode == "fixed" and boom_length_ft:
+            locked_in = float(boom_length_ft) * 12.0
+            if imp_span > locked_in + 0.5:
+                st.warning(
+                    f"⚠️ Imported boom span **{fmt_in(imp_span)}** is longer "
+                    f"than the locked boom **{fmt_in(locked_in)}**."
+                )
+                rescale_on_adopt = st.checkbox(
+                    "Rescale imported positions to fit the locked boom on adopt",
+                    value=True, key="su_maa_rescale",
+                )
+
         if st.button("✅ Adopt imported geometry as current",
                      type="primary", key="su_adopt_maa"):
-            GEO_PATH.write_text(json.dumps({"elements": new_els}, indent=2))
+            adopted = [dict(e) for e in new_els]
+            if rescale_on_adopt:
+                els_sorted = sorted(adopted,
+                                    key=lambda e: float(e["position_in"]))
+                p0 = float(els_sorted[0]["position_in"])
+                scale = (float(boom_length_ft) * 12.0) / max(1e-9, imp_span)
+                for e in els_sorted:
+                    e["position_in"] = round(
+                        p0 + (float(e["position_in"]) - p0) * scale, 3)
+                adopted = els_sorted
+            GEO_PATH.write_text(json.dumps({"elements": adopted}, indent=2))
             # Sync setup's director count with what was actually imported.
-            n_dirs_imp = sum(1 for e in new_els
+            n_dirs_imp = sum(1 for e in adopted
                              if str(e["name"]).upper().startswith("DIR"))
             new_setup = dict(setup)
             new_setup["n_directors"] = n_dirs_imp
             SETUP_PATH.write_text(json.dumps(new_setup, indent=2))
             st.cache_data.clear()
-            st.success(f"Adopted {len(new_els)} elements ({n_dirs_imp} directors). "
+            extra = (" (rescaled to fit the locked boom)" if rescale_on_adopt
+                     else "")
+            st.success(f"Adopted {len(adopted)} elements "
+                       f"({n_dirs_imp} directors){extra}. "
                        "Now go to Tune & Learn to tune it.")
             st.rerun()
     except Exception as ex:

@@ -221,6 +221,9 @@ st.markdown(
     f"boom Ø {float(setup.get('boom_diameter_in', 1.5)):.2f}\" · "
     f"elements {str(setup.get('grounding', 'insulated')).upper()} · "
     f"taper `{v2_runner.taper_signature()}`"
+    + (f" · boom LOCKED {fmt_in(float(setup['boom_length_in']))}"
+       if (setup.get('boom_mode') == 'fixed' and setup.get('boom_length_in'))
+       else " · boom FREE")
 )
 
 if st.button("📊 Build / refresh full report", type="primary", key="rp_build"):
@@ -356,7 +359,10 @@ perf_rows = [
     ("Radiation efficiency",
      f"{rep['efficiency_pct']:.1f}%" if rep['efficiency_pct'] is not None else "—"),
     ("Antenna height / boom length",
-     f"{rep['height_ft']:.0f} ft  /  {fmt_in(rep['boom_in'])}"),
+     f"{rep['height_ft']:.0f} ft  /  " +
+     (f"{fmt_in(float(setup['boom_length_in']))} (LOCKED)"
+      if (setup.get('boom_mode') == 'fixed' and setup.get('boom_length_in'))
+      else f"{fmt_in(rep['boom_in'])} (free)")),
     ("Resonant (min-SWR) freq",
      f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
     ("In-band max SWR",
@@ -438,6 +444,15 @@ except Exception:
     pass
 
 generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+# Locked-boom pill: surfaces the hard cap explicitly so the printed cut-sheet
+# matches the build constraint, not just whatever span the geometry happens to
+# have.  When FREE we still report the actual span so the user knows what the
+# tuner produced.
+_boom_pill_html = (
+    f'<span class="pill">boom LOCKED {fmt_in(float(setup["boom_length_in"]))}</span>'
+    if (setup.get("boom_mode") == "fixed" and setup.get("boom_length_in")) else
+    f'<span class="pill">boom FREE — span {fmt_in(rep["boom_in"])}</span>'
+)
 
 report_body = f"""
 <div class="ant-report" id="ant-report">
@@ -445,6 +460,7 @@ report_body = f"""
     <h1>Hybrid Yagi Report — {len(els)} elements</h1>
     <div class="meta">
       <span class="pill">{rep['height_ft']:.0f} ft AGL</span>
+      {_boom_pill_html}
       <span class="pill">boom Ø {float(setup.get('boom_diameter_in', 1.5)):.2f}"</span>
       <span class="pill">{str(setup.get('grounding', 'insulated')).upper()}</span>
       <span class="pill">taper {v2_runner.taper_signature()}</span>
