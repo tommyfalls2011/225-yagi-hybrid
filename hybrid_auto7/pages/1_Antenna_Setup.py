@@ -186,6 +186,52 @@ if els:
 else:
     st.info("No geometry yet — set the element count and hit Build / reseed.")
 
+# ---------- Migrate hybrid runs from legacy yagi_history.db -----------------
+# The legacy `opt_7el_yagi2.py` optimizer (still used by the Yagi Designer page)
+# writes everything -- pure Yagis AND hybrids -- to ~/scripts/yagi_history.db.
+# This runs the read-only migration: hybrid rows (those with XFRMR + COUPLER
+# elements) get copied into auto7_history.db so the self-learning loop can
+# benefit from them.  Pure-Yagi rows are skipped; the source DB is never
+# modified; the import is idempotent (UNIQUE design_key catches duplicates).
+with st.expander("📦 Import hybrid runs from legacy `yagi_history.db` "
+                 "(does NOT touch the Yagi Designer)", expanded=False):
+    legacy_default = str(pathlib.Path.home() / "scripts/yagi_history.db")
+    legacy_path = st.text_input("Legacy DB path", value=legacy_default,
+                                key="su_yagi_legacy_path")
+    cdry, capp = st.columns(2)
+    with cdry:
+        if st.button("🔎 Dry-run (count only, no writes)",
+                     key="su_yagi_migrate_dry", use_container_width=True):
+            try:
+                from scripts.migrate_yagi_history import migrate as _migrate
+                stats = _migrate(pathlib.Path(legacy_path).expanduser(),
+                                 ROOT / "data/auto7_history.db", dry_run=True)
+                st.success(f"DRY RUN: would insert {stats['inserted']} "
+                           f"hybrid runs · "
+                           f"skip {stats['skipped_dup']} duplicates · "
+                           f"skip {stats['skipped_no_xfrmr']} pure-Yagi runs · "
+                           f"skip {stats['skipped_missing']} incomplete rows.")
+            except Exception as ex:
+                st.error(f"Migration failed: {ex}")
+    with capp:
+        if st.button("📥 Run migration", key="su_yagi_migrate_apply",
+                     type="primary", use_container_width=True):
+            try:
+                from scripts.migrate_yagi_history import migrate as _migrate
+                stats = _migrate(pathlib.Path(legacy_path).expanduser(),
+                                 ROOT / "data/auto7_history.db", dry_run=False)
+                st.success(f"Inserted **{stats['inserted']}** hybrid runs into "
+                           f"`auto7_history.db`.  Skipped: "
+                           f"{stats['skipped_dup']} dup · "
+                           f"{stats['skipped_no_xfrmr']} pure-Yagi · "
+                           f"{stats['skipped_missing']} incomplete.  Source "
+                           f"file untouched (read-only).")
+            except Exception as ex:
+                st.error(f"Migration failed: {ex}")
+    st.caption("Source DB is opened with `mode=ro` — nothing is modified.  "
+               "Re-running is safe (skips rows already imported).  The "
+               "Yagi Designer keeps using `yagi_history.db` exactly as before.")
+
 # ---------- Import from MMANA-GAL .maa --------------------------------------
 st.markdown("---")
 st.markdown("### 📥 Import geometry from MMANA-GAL (`.maa`)")
