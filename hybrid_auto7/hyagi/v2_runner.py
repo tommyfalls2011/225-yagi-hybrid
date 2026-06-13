@@ -43,13 +43,23 @@ GROUNDED = False
 BOOM_DIAMETER_IN = 1.5
 
 
-def get_active_taper():
+def get_active_taper(element_name=None):
     """Active element taper schedule from data/taper_v2.json, else the default.
-    Returns a list of (OD_in, section_len_in) centre -> tip."""
+    Returns a list of (OD_in, section_len_in) centre -> tip.
+
+    If `element_name` is given and the JSON has an `overrides` entry for that
+    element (case-insensitive), that override schedule is returned instead --
+    so directors can run thinner tubing than the driven cell, etc.  Pass None
+    (the default) to get the global default schedule."""
     p = _DATA_DIR / "taper_v2.json"
     try:
         if p.exists():
             d = json.loads(p.read_text())
+            if element_name:
+                overrides = (d.get("overrides") or {})
+                key = str(element_name).upper()
+                if key in overrides and overrides[key]:
+                    return [(float(od), float(L)) for od, L in overrides[key]]
             sch = d.get("default") or d.get("schedule")
             if sch:
                 return [(float(od), float(L)) for od, L in sch]
@@ -58,8 +68,45 @@ def get_active_taper():
     return TAPER_SCHEDULE
 
 
-def taper_signature(taper=None):
-    """Short stable string identifying a taper, for matching learned runs."""
+def get_taper_config():
+    """Return the full taper config dict so the UI can edit both the default
+    schedule and any per-element overrides.  Always returns a fresh dict; the
+    caller can mutate and save it back to data/taper_v2.json safely."""
+    p = _DATA_DIR / "taper_v2.json"
+    try:
+        if p.exists():
+            d = json.loads(p.read_text())
+            return {
+                "default": [list(s) for s in
+                            (d.get("default") or d.get("schedule") or TAPER_SCHEDULE)],
+                "overrides": dict(d.get("overrides") or {}),
+            }
+    except Exception:
+        pass
+    return {"default": [list(s) for s in TAPER_SCHEDULE], "overrides": {}}
+
+
+def taper_signature(taper=None, elements=None):
+    """Short stable string identifying a taper, for matching learned runs.
+
+    Backward-compatible: with no args (or taper="auto"), returns the GLOBAL
+    default taper signature.  Passing `elements` includes any per-element
+    overrides that actually apply to those elements, so the learning DB keeps
+    per-element-taper runs in their own bucket and doesn't pollute the
+    default-taper memory."""
+    if elements is not None:
+        cfg = get_taper_config()
+        base = (";".join(f"{od:g}x{L:g}" for od, L in cfg["default"])
+                if cfg["default"] else "uniform")
+        used = sorted({str(e["name"]).upper() for e in elements
+                       if str(e["name"]).upper() in (cfg["overrides"] or {})})
+        if not used:
+            return base
+        parts = [
+            f"{n}:{';'.join(f'{od:g}x{L:g}' for od, L in cfg['overrides'][n])}"
+            for n in used
+        ]
+        return f"{base}|{','.join(parts)}"
     t = taper if taper not in (None, "auto") else get_active_taper()
     if not t:
         return "uniform"
@@ -164,6 +211,9 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
     """
     if taper == "auto":
         taper = get_active_taper()
+        per_element = True               # resolve per-element overrides below
+    else:
+        per_element = False
     if grounded is None:
         grounded = GROUNDED
     if boom_diameter_in is None:
@@ -179,8 +229,14 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
         L = float(el["length_in"]) * INCH
         is_de = el["name"].upper() == "DE"
         bond = bool(grounded) and not is_de
-        if taper:
-            tag, ftag, fseg = _emit_element(out, tag, p, L, H, taper, split_center=bond)
+        # Resolve the right taper for THIS element when caller asked "auto".
+        # Per-element overrides let directors run thinner tubing than the
+        # driven cell without re-running the whole model with a different
+        # global schedule.
+        el_taper = get_active_taper(el["name"]) if per_element else taper
+        if el_taper:
+            tag, ftag, fseg = _emit_element(out, tag, p, L, H, el_taper,
+                                            split_center=bond)
         else:
             a = wire_radius_in * INCH
             if bond:

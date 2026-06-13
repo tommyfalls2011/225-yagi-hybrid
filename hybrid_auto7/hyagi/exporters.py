@@ -65,9 +65,18 @@ def _maa_wires(elements, height_ft, taper):
 
     Element span is along Y (-half..+half), boom along X (= position), height on
     Z.  Each element is the same stepped-diameter tubing the engine models: one
-    centre wire crossing Y=0 plus a +Y and -Y wire per outer taper section."""
-    if taper == "auto":
-        taper = v2_runner.get_active_taper()
+    centre wire crossing Y=0 plus a +Y and -Y wire per outer taper section.
+
+    `taper="auto"` resolves the schedule PER ELEMENT (REF / XFRMR / DE / COUPLER
+    / DIRn) from data/taper_v2.json, so per-element-taper antennas export the
+    same stepped tubing MMANA-GAL will see in its model."""
+    per_element = (taper == "auto")
+    if per_element:
+        global_taper = v2_runner.get_active_taper()
+    elif taper == "auto":
+        global_taper = v2_runner.get_active_taper()
+    else:
+        global_taper = taper
     H = height_ft * FT
     rows = []                 # (x1,y1,z1,x2,y2,z2,r)
     de_center_idx = None      # 1-based wire index fed on the DE
@@ -75,8 +84,10 @@ def _maa_wires(elements, height_ft, taper):
         x = float(el["position_in"]) * INCH
         half = (float(el["length_in"]) * INCH) / 2.0
         is_de = str(el["name"]).upper() == "DE"
-        if taper:
-            secs = v2_runner._half_sections(half, taper)
+        el_taper = (v2_runner.get_active_taper(el["name"])
+                    if per_element else global_taper)
+        if el_taper:
+            secs = v2_runner._half_sections(half, el_taper)
         else:
             secs = [(0.25 * INCH, half)]   # uniform fallback
         r0, l0 = secs[0]

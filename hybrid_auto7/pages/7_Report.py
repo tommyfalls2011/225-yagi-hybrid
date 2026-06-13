@@ -372,8 +372,9 @@ perf_table = (
     + '</tbody></table>'
 )
 
-# Cut sheet table (build numbers).
-taper = v2_runner.get_active_taper()
+# Cut sheet table (build numbers).  Per-element taper resolution -- pick the
+# right schedule for each element (REF / XFRMR / DE / COUPLER / DIRn) so the
+# cut sheet matches exactly what the optimizer modelled.
 INCH = v2_runner.INCH
 els_sorted = sorted(els, key=lambda e: float(e["position_in"]))
 p0 = float(els_sorted[0]["position_in"])
@@ -381,7 +382,8 @@ cut_rows = []
 for i, e in enumerate(els_sorted):
     L = float(e["length_in"])
     half_m = (L * INCH) / 2.0
-    secs = v2_runner._half_sections(half_m, taper) if taper else []
+    el_taper = v2_runner.get_active_taper(e["name"])
+    secs = v2_runner._half_sections(half_m, el_taper) if el_taper else []
     sect_txt = " + ".join(
         f"{(r * 2) / INCH:.3f}\"OD × {fmt_in(ln / INCH)}" for r, ln in secs
     ) or "uniform"

@@ -505,8 +505,12 @@ def _result(geo, metrics, score, generations):
 
 def _design_signature(elements, cfg, f_low, f_high):
     """Stable key grouping runs of the same antenna so learning only reuses
-    moves from a comparable design (same taper, band, height, element count)."""
-    return (f"{v2_runner.taper_signature()}|{f_low:.3f}-{f_high:.3f}"
+    moves from a comparable design (same taper, band, height, element count).
+
+    The taper portion now also captures any PER-ELEMENT taper overrides that
+    apply to these elements, so a 'directors-thinner' build doesn't share
+    memory with the all-elements-same-tube version."""
+    return (f"{v2_runner.taper_signature(elements=elements)}|{f_low:.3f}-{f_high:.3f}"
             f"|h{float(cfg.height_ft):.0f}|n{len(elements)}")
 
 

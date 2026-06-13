@@ -155,9 +155,11 @@ st.caption("This is the aluminum tube schedule the optimizer and the .nec/.maa "
            "from the element CENTRE out to the TIP; use a big length (e.g. 999) for "
            "the piece that runs to the tip.")
 try:
-    _cur_taper = json.loads(TAPER_PATH.read_text()).get("default", STD_TAPER)
+    _cur_taper_cfg = json.loads(TAPER_PATH.read_text())
 except Exception:
-    _cur_taper = STD_TAPER
+    _cur_taper_cfg = {"default": STD_TAPER}
+_cur_taper = _cur_taper_cfg.get("default", STD_TAPER)
+_cur_overrides = _cur_taper_cfg.get("overrides", {}) or {}
 _taper_text = "\n".join(f"{od}, {L}" for od, L in _cur_taper)
 new_taper_text = st.text_area("Taper sections (OD_in, length_in — centre → tip)",
                               value=_taper_text, key="al_taper", height=120)
@@ -173,7 +175,10 @@ with _tc1:
             if len(parts) >= 2:
                 sched.append([float(parts[0]), float(parts[1])])
         if sched:
-            TAPER_PATH.write_text(json.dumps({"default": sched}, indent=2))
+            _save = {"default": sched}
+            if _cur_overrides:                # preserve per-element overrides
+                _save["overrides"] = _cur_overrides
+            TAPER_PATH.write_text(json.dumps(_save, indent=2))
             st.cache_data.clear()
             st.success(f"Saved taper: {sched}  (re-run AUTO-LEARN to tune for it)")
             st.rerun()
@@ -184,7 +189,64 @@ with _tc2:
                  key="al_reset_taper", use_container_width=True):
         TAPER_PATH.write_text(json.dumps({"default": STD_TAPER}, indent=2))
         st.cache_data.clear()
-        st.success("Taper reset to standard commercial 0.625\"/0.5\".")
+        st.success("Taper reset to standard commercial 0.625\"/0.5\" "
+                   "(per-element overrides cleared).")
+        st.rerun()
+
+# ---- Per-element taper overrides ------------------------------------------
+# Lets the user run thinner tubing on the directors (typical: 0.5"/0.375") than
+# on the driven cell, exactly like commercial Yagis.  Each override fully
+# REPLACES the default schedule for that one element; leave a field blank to
+# inherit the default above.  Overrides are saved into taper_v2.json and the
+# whole engine (.nec, .maa, optimizer, cut sheet, report) picks them up
+# automatically.
+with st.expander("🧵 Per-element taper overrides "
+                 "(directors thinner than the driven cell, etc.)",
+                 expanded=bool(_cur_overrides)):
+    st.caption("Each override fully replaces the default schedule for that "
+               "one element.  Leave a field BLANK to keep the default.  Format "
+               "(one tube per line): `OD_inches, section_length_inches` from "
+               "the element CENTRE out to the TIP.")
+    _names = [str(e["name"]).upper() for e in geo["elements"]]
+    _ov_inputs = {}
+    _ocols = st.columns(min(3, len(_names)) or 1)
+    for i, name in enumerate(_names):
+        with _ocols[i % len(_ocols)]:
+            cur = _cur_overrides.get(name)
+            txt = "\n".join(f"{od}, {L}" for od, L in cur) if cur else ""
+            _ov_inputs[name] = st.text_area(
+                f"`{name}`",
+                value=txt, key=f"al_ov_{name}", height=88,
+                placeholder="(blank = use default above)",
+            )
+    if st.button("💾 Save per-element overrides", key="al_save_overrides",
+                 use_container_width=True):
+        new_overrides = {}
+        for name, txt in _ov_inputs.items():
+            sched = []
+            for ln in (txt or "").splitlines():
+                ln = ln.strip()
+                if not ln:
+                    continue
+                parts = [p for p in ln.replace("\t", ",").split(",") if p.strip()]
+                if len(parts) >= 2:
+                    try:
+                        sched.append([float(parts[0]), float(parts[1])])
+                    except ValueError:
+                        pass
+            if sched:
+                new_overrides[name] = sched
+        save = {"default": _cur_taper}
+        if new_overrides:
+            save["overrides"] = new_overrides
+        TAPER_PATH.write_text(json.dumps(save, indent=2))
+        st.cache_data.clear()
+        if new_overrides:
+            st.success(f"Saved {len(new_overrides)} per-element override(s): "
+                       f"{', '.join(new_overrides)}.  Re-run AUTO-LEARN to "
+                       f"tune for the new taper combination.")
+        else:
+            st.success("All per-element overrides cleared.")
         st.rerun()
 
 st.markdown("**Starting geometry (current)**  ·  build/reseed on the Antenna Setup page")
