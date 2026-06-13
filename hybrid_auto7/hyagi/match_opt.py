@@ -44,6 +44,86 @@ def _len_bounds(rules, name, default=(1.0, 9999.0)):
     return lo, hi
 
 
+# ---------------------------------------------------------------------------
+# OWA (Optimized Wideband Antenna) stagger-tuned seed for the driven cell.
+#
+# Background -- WHY this exists.  A driven-cell hybrid (REF / XFRMR / DE /
+# COUPLER) is a coupled-resonator network.  The XFRMR and COUPLER are NOT just
+# match transformers; they are closely-coupled passive resonators sitting next
+# to the DE.  If they happen to be tuned NEAR the same resonance as the DE the
+# antenna behaves like one high-Q resonator -- single deep SWR dip, narrow band.
+# If they are STAGGER-TUNED -- one a bit BELOW the operating centre, one a bit
+# ABOVE -- the three resonances overlap into a broad, low-Q SWR trough, which is
+# exactly how a real OWA covers 2-5 MHz of bandwidth on 11/10 m.
+#
+# A coordinate-descent matcher that only minimises the WORST SWR can stay stuck
+# in the single-dip basin if it starts there -- every small move LOOKS bad
+# because moving one element off-resonance lifts the centre SWR before the band
+# edges come down.  So for any band wider than ~1 MHz we explicitly seed the
+# three cell lengths into a stagger-tuned configuration first; the descent then
+# converges into the correct basin.
+#
+# Physical model: in this code XFRMR and COUPLER are forced to be SHORTER than
+# the DE (cap = de_len - 1 in _apply, see also v2_runner.validate); a shorter
+# fat-tube element resonates HIGHER in frequency.  So to stagger:
+#   - DE   -> resonant at the band centre (longest of the three)
+#   - XFRMR -> resonant slightly HIGHER than centre (a bit shorter than DE)
+#   - COUPLER -> resonant slightly higher still (shortest)
+# With both helpers above centre, the band-low edge SWR is pulled down by the
+# DE's natural skirt, and the band-high edge SWR is pulled down by the helpers'
+# resonances.  Without this we cannot cover wide bands like 25-28 MHz.
+# ---------------------------------------------------------------------------
+def _stagger_lengths(de_len, f_low, f_high, fc):
+    """Return target (de_len, xf_len, cp_len) stagger-tuned for the band.
+    Lengths scale inversely with target frequency (electrical length ~ 1/f
+    at fixed diameter), keeping the DE near fc and pushing XFRMR/COUPLER to
+    higher frequencies above fc so their resonances flatten the band-high
+    edge SWR while the DE handles the band-low edge skirt."""
+    bw = max(0.0, float(f_high) - float(f_low))
+    # Fractional offsets above centre for XFRMR and COUPLER targets.  Wider
+    # band -> push them further out so the resonant trio spans the band.  We
+    # cap at +/-5% which is the practical OWA range (Q of the cell limits how
+    # far apart the resonators can sit without re-introducing a hump).
+    spread = min(0.05, 0.5 * bw / max(fc, 1.0))
+    f_xf = fc * (1.0 + 0.45 * spread)
+    f_cp = fc * (1.0 + 0.95 * spread)
+    # Lengths scale as fc/f_target for the same physical taper / height.
+    xf_target = de_len * (fc / f_xf)
+    cp_target = de_len * (fc / f_cp)
+    return de_len, xf_target, cp_target
+
+
+def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
+    """Mutate the driven cell lengths in `elements` to a stagger-tuned seed
+    when the band is wider than ~1 MHz.  Returns the (possibly modified) list.
+
+    Only touches DE/XFRMR/COUPLER lengths and is bounded by the rules; never
+    moves directors / REF (those are owned by the beam phase)."""
+    bw = float(f_high) - float(f_low)
+    if bw <= 1.0:
+        return elements                          # not worth re-seeding
+    de = _el(elements, "DE")
+    xf = _el(elements, "XFRMR")
+    cp = _el(elements, "COUPLER")
+    if de is None or (xf is None and cp is None):
+        return elements
+    de_lo, de_hi = _len_bounds(rules, "DE", (185.0, 225.0))
+    de_len_seed = min(de_hi, max(de_lo, float(de["length_in"])))
+    _, xf_t, cp_t = _stagger_lengths(de_len_seed, f_low, f_high, fc)
+    de["length_in"] = round(de_len_seed, 3)
+    if xf is not None:
+        lo, hi = _len_bounds(rules, "XFRMR", (170.0, 210.0))
+        xf["length_in"] = round(min(hi, max(lo, min(de_len_seed - 1.0, xf_t))), 3)
+    if cp is not None:
+        lo, hi = _len_bounds(rules, "COUPLER", (150.0, 200.0))
+        cp["length_in"] = round(min(hi, max(lo, min(de_len_seed - 1.0, cp_t))), 3)
+    if log_fn:
+        log_fn(f"  [stagger-seed] bw={bw:.2f} MHz  DE={de['length_in']:.2f}  "
+               f"XFRMR={xf['length_in'] if xf else 0:.2f}  "
+               f"COUPLER={cp['length_in'] if cp else 0:.2f}")
+    return elements
+
+
 def _build_dofs(elements, rules, tune_spacings=False):
     """Return (vec, bounds, director_names). vec/bounds keyed by DOF name.
 
@@ -469,9 +549,18 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
 
     if goal == "hybrid":
+        # Stagger-tune the driven cell when the band is wide -- positions the
+        # three coupled resonators in the right basin for multi-MHz coverage
+        # (see _stagger_lengths docstring).  No-op for narrow bands / no XFRMR.
+        elements = _apply_stagger_seed(copy.deepcopy(elements), rules,
+                                       f_low, f_high, fc, log_fn=log_fn)
         return _optimize_hybrid(elements, rules, height_ft, target_swr, points,
                                 f_low, f_high, fc, tune_spacings, steps, log_fn,
                                 move_log, on_move, iters=max(2, int(restarts) + 1))
+
+    if goal == "wideband":
+        elements = _apply_stagger_seed(copy.deepcopy(elements), rules,
+                                       f_low, f_high, fc, log_fn=log_fn)
 
     vec0, bounds, de_pos = _build_dofs(elements, rules, tune_spacings=tune_spacings)
     if learned_start:
@@ -494,6 +583,11 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
 
     # Restart to escape shallow minima. Wideband restarts only while still above
     # target; resonant always uses the full restart budget (centre match is hard).
+    # For OWA-wide bands (>1 MHz) widen the perturbation on the driven cell so
+    # restarts can actually JUMP between stagger-tune basins instead of nudging
+    # within the same one.
+    bw_mhz = float(f_high) - float(f_low)
+    cell_span = 0.40 if bw_mhz > 1.5 else (0.25 if bw_mhz > 1.0 else 0.15)
     r = 0
     while r < restarts and (goal == "resonant" or best_mx > target_swr):
         r += 1
@@ -502,7 +596,11 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
             if k.endswith("_len") and k[:-4].upper().startswith("DIR"):
                 continue
             lo, hi = bounds[k]
-            span = (hi - lo) * 0.15
+            # Driven-cell lengths get the OWA-wide span; other DOFs use 15%.
+            base = k[:-4] if k.endswith(("_len", "_gap")) else k
+            is_cell = base.lower() in ("de", "xf", "cp")
+            frac = cell_span if (is_cell and goal == "wideband") else 0.15
+            span = (hi - lo) * frac
             pv[k] = round(min(hi, max(lo, pv[k] + rng.uniform(-span, span))), 3)
         v, o, mx = _descend(pv, bounds, elements, de_pos, rules, height_ft,
                             f_low, f_high, points, steps, target_swr, log_fn,

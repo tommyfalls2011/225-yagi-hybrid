@@ -29,6 +29,7 @@ SETUP_PATH = ROOT / "data/setup_v2.json"
 
 sys.path.insert(0, str(ROOT))
 from hyagi import hybrid_seed  # noqa: E402
+from hyagi import exporters  # noqa: E402
 
 DEFAULT = {"n_directors": 3, "boom_mode": "fixed", "boom_length_in": None,
            "height_ft": 30.0, "boom_diameter_in": 1.5, "grounding": "insulated"}
@@ -119,3 +120,41 @@ if els:
                        f"len={float(e['length_in']):.1f} in")
 else:
     st.info("No geometry yet — set the element count and hit Build / reseed.")
+
+# ---------- Import from MMANA-GAL .maa --------------------------------------
+st.markdown("---")
+st.markdown("### 📥 Import geometry from MMANA-GAL (`.maa`)")
+st.caption("If you've micro-tuned an antenna in MMANA-GAL, upload its `.maa` "
+           "file here to replace the current geometry with the MMANA wires. "
+           "Element span is read on Y, boom on X, height on Z; the DE is the "
+           "fed wire. Other pages will then tune / report against the imported "
+           "lengths and positions.")
+up = st.file_uploader("Upload .maa file", type=["maa", "txt"], key="su_maa_upload")
+if up is not None:
+    try:
+        text = up.read().decode("utf-8", errors="replace")
+        parsed = exporters.from_maa(text)
+        new_els = parsed["elements"]
+        st.success(f"Parsed {len(new_els)} elements from `{up.name}` "
+                   f"(centre {parsed.get('center_mhz') or '?'} MHz).")
+        prev_cols = st.columns(min(4, len(new_els)))
+        for i, e in enumerate(new_els):
+            with prev_cols[i % len(prev_cols)]:
+                st.caption(f"`{e['name']}`  pos={e['position_in']:.2f} in  "
+                           f"len={e['length_in']:.2f} in")
+        if st.button("✅ Adopt imported geometry as current",
+                     type="primary", key="su_adopt_maa"):
+            GEO_PATH.write_text(json.dumps({"elements": new_els}, indent=2))
+            # Sync setup's director count with what was actually imported.
+            n_dirs_imp = sum(1 for e in new_els
+                             if str(e["name"]).upper().startswith("DIR"))
+            new_setup = dict(setup)
+            new_setup["n_directors"] = n_dirs_imp
+            SETUP_PATH.write_text(json.dumps(new_setup, indent=2))
+            st.cache_data.clear()
+            st.success(f"Adopted {len(new_els)} elements ({n_dirs_imp} directors). "
+                       "Now go to Tune & Learn to tune it.")
+            st.rerun()
+    except Exception as ex:
+        st.error(f"Could not parse .maa: {ex}")
+
