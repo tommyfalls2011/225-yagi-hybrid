@@ -43,8 +43,9 @@ def test_stagger_seed_noop_for_narrow_band():
 
 def test_stagger_seed_owa_3mhz_band():
     """On a 3 MHz OWA band the seed must place XFRMR and COUPLER SHORTER
-    than the DE (= resonate above centre) and shorter than they started, so
-    the trio is staggered across the band."""
+    than the DE (= resonate above design centre).  The design centre stays
+    pinned at rules.global.freq_mhz_center -- it does NOT drift to the band
+    midpoint, and REF/DIRn/DE lengths must not be rescaled."""
     seeded = match_opt._apply_stagger_seed(
         copy.deepcopy(ELEMENTS), RULES,
         f_low=25.0, f_high=28.0, fc=26.5, log_fn=None,
@@ -58,6 +59,27 @@ def test_stagger_seed_owa_3mhz_band():
     crules = RULES["elements"]["COUPLER"]
     assert xrules["length_min_in"] <= lens["XFRMR"] <= xrules["length_max_in"]
     assert crules["length_min_in"] <= lens["COUPLER"] <= crules["length_max_in"]
+
+
+def test_stagger_seed_does_not_drift_design_centre():
+    """Critical user requirement: the antenna's natural resonance must stay
+    pinned at rules.global.freq_mhz_center (the DESIGN centre) -- even if the
+    user picks a band that's NOT symmetric about it.  REF / DIRn / DE lengths
+    are never rescaled by the seed; only XFRMR / COUPLER move."""
+    rules = json.loads(json.dumps(RULES))
+    rules["global"]["freq_mhz_center"] = 27.195      # user's chosen design fc
+    seeded = match_opt._apply_stagger_seed(
+        copy.deepcopy(ELEMENTS), rules,
+        f_low=25.0, f_high=28.0, fc=26.5, log_fn=None,
+    )
+    lens = _names_lens(seeded)
+    original = _names_lens(ELEMENTS)
+    for nm in ("REF", "DE", "DIR1", "DIR2", "DIR3", "DIR4", "DIR5"):
+        if nm in original:
+            assert lens[nm] == original[nm], (
+                f"{nm} got rescaled (was {original[nm]}, now {lens[nm]}) "
+                "-- the design centre is no longer where the user set it!"
+            )
 
 
 def test_stagger_seed_xfrmr_above_coupler_in_freq():

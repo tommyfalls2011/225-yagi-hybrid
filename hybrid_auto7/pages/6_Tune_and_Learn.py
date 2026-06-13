@@ -59,15 +59,23 @@ glb = rules["global"]
 v2_runner.GROUNDED = (str(setup.get("grounding", "insulated")) == "grounded")
 v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
 
-# Initialise band-edge state ONCE so the OWA-preset button (or any future
-# preset) can write to it before the number_input widgets render.  Writing to
-# a widget's key AFTER it has been instantiated raises StreamlitAPIException,
-# so all preset buttons must mutate state up here and let the widgets read it
-# back on the rerun.
-if "al_low" not in st.session_state:
-    st.session_state["al_low"] = float(glb.get("freq_mhz_low", 26.965))
-if "al_high" not in st.session_state:
-    st.session_state["al_high"] = float(glb.get("freq_mhz_high", 27.405))
+# Design centre + wideband half-width.  Centre is the user's chosen operating
+# frequency from rules.global; the half-width says "how far each way should
+# the matcher try to keep SWR flat".  Band edges f_low / f_high are derived
+# symmetrically (f_low = fc - hw, f_high = fc + hw) so the antenna's natural
+# resonance is ALWAYS pinned at the user's centre, never drifted to the band
+# midpoint.  Widgets read state from these keys, so any preset must mutate
+# session_state BEFORE the widgets render.
+_default_fc = float(glb.get("freq_mhz_center", 27.195))
+if "al_fc" not in st.session_state:
+    st.session_state["al_fc"] = _default_fc
+# Half-width state: derived from any pre-existing f_low/f_high in rules, but
+# clamped to >=0.2 MHz so the slider has somewhere to sit.
+_existing_low = float(glb.get("freq_mhz_low", _default_fc - 0.22))
+_existing_high = float(glb.get("freq_mhz_high", _default_fc + 0.22))
+_existing_hw = max(0.2, 0.5 * (_existing_high - _existing_low))
+if "al_hw" not in st.session_state:
+    st.session_state["al_hw"] = round(_existing_hw, 3)
 
 st.success(
     f"From Antenna Setup → {len(geo['elements'])} elements · height "
@@ -80,24 +88,63 @@ st.success(
 
 c1, c2 = st.columns(2)
 with c1:
-    # OWA wideband preset — must mutate band state BEFORE the band_low/high
-    # widgets render below, otherwise Streamlit rejects the write.
-    if st.button("📡 OWA wideband preset (25.000 – 28.000 MHz)",
-                 key="al_owa_preset", use_container_width=True,
-                 help="Sets the band to the 3 MHz OWA range. The matcher will "
-                      "stagger-tune the XFRMR / DE / COUPLER as coupled "
-                      "resonators to flatten SWR across the band. Most antennas "
-                      "use a narrower CB band; pick OWA only for true wideband "
-                      "builds."):
-        st.session_state["al_low"] = 25.000
-        st.session_state["al_high"] = 28.000
-        st.rerun()
-    band_low = st.number_input("Band low (MHz)", step=0.005, format="%.3f",
-                               key="al_low",
-                               help="Lower band edge to hold SWR across (e.g. 26.665 freeband, "
-                                    "25.000 for full OWA wideband)")
-    band_high = st.number_input("Band high (MHz)", step=0.005, format="%.3f",
-                                key="al_high")
+    # Preset row: narrow CB / freeband / 1.5 MHz wideband / 3 MHz wideband.
+    # Each preset writes session_state for centre + half-width BEFORE the
+    # widgets render so Streamlit doesn't reject the post-instantiation write.
+    p1, p2, p3, p4 = st.columns(4)
+    with p1:
+        if st.button("📻 CB (±0.22)", key="al_p_cb",
+                     use_container_width=True,
+                     help="40-channel CB band: ±220 kHz around centre"):
+            st.session_state["al_hw"] = 0.220
+            st.rerun()
+    with p2:
+        if st.button("📡 Freeband (±0.5)", key="al_p_fb",
+                     use_container_width=True,
+                     help="Common freeband / 11 m: ±0.5 MHz"):
+            st.session_state["al_hw"] = 0.5
+            st.rerun()
+    with p3:
+        if st.button("🌐 Wide (±1.5)", key="al_p_owa15",
+                     use_container_width=True,
+                     help="Wideband target: ±1.5 MHz around centre"):
+            st.session_state["al_hw"] = 1.5
+            st.rerun()
+    with p4:
+        if st.button("🌍 Extreme (±3.0)", key="al_p_owa30",
+                     use_container_width=True,
+                     help="Extreme OWA: ±3 MHz around centre. The matcher "
+                          "will TRY to flatten SWR over the full ±3 MHz; if "
+                          "physics says no, you get the best achievable "
+                          "wideband around the centre — the centre never "
+                          "drifts."):
+            st.session_state["al_hw"] = 3.0
+            st.rerun()
+
+    fc_input = st.number_input(
+        "Design centre (MHz)  — antenna ALWAYS resonates here",
+        min_value=1.0, max_value=500.0, step=0.005, format="%.3f",
+        key="al_fc",
+        help="The resonant centre frequency the antenna is built for. The "
+             "matcher pins the antenna's natural resonance to this number "
+             "and never shifts it -- so widening the bandwidth slider "
+             "doesn't move where the antenna actually 'is'.")
+    half_width = st.slider(
+        "Wideband half-width (MHz each side of centre)",
+        min_value=0.1, max_value=6.0, value=float(st.session_state["al_hw"]),
+        step=0.05, key="al_hw",
+        help="The matcher TRIES to keep SWR low this far each side of the "
+             "centre.  Reaching it isn't guaranteed -- if the physics says "
+             "no for this element count / taper / height, you'll get the "
+             "best achievable wideband around the centre.  Centre never "
+             "drifts.")
+    band_low = float(fc_input) - float(half_width)
+    band_high = float(fc_input) + float(half_width)
+    st.caption(
+        f"Tuning band → **{band_low:.3f} – {band_high:.3f} MHz** "
+        f"(±{half_width:.2f} MHz about **{fc_input:.3f} MHz**)"
+    )
+
     target_swr = st.number_input("Target max SWR", value=1.20, min_value=1.01, max_value=3.0,
                                  step=0.01, format="%.2f", key="al_target")
     tune_goal = st.selectbox(
@@ -265,12 +312,13 @@ with st.expander("📤 Export CURRENT geometry to .nec / .maa", expanded=False):
     rules_cur = json.loads(json.dumps(rules))
     rules_cur["global"]["freq_mhz_low"] = float(band_low)
     rules_cur["global"]["freq_mhz_high"] = float(band_high)
+    rules_cur["global"]["freq_mhz_center"] = float(fc_input)
     try:
         nec_cur = exporters.to_nec(geo["elements"], rules_cur,
                                    height_ft=float(height_ft), points=int(band_points))
         maa_cur = exporters.to_maa(geo["elements"], rules_cur,
                                    height_ft=float(height_ft),
-                                   center_mhz=float(glb.get("freq_mhz_center", 27.195)))
+                                   center_mhz=float(fc_input))
         ec1, ec2 = st.columns(2)
         with ec1:
             st.download_button("Download .nec", data=nec_cur,
@@ -295,6 +343,10 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
     rules_run = json.loads(json.dumps(rules))
     rules_run["global"]["freq_mhz_low"] = float(band_low)
     rules_run["global"]["freq_mhz_high"] = float(band_high)
+    # Pin the user-chosen design centre so the stagger seed staggers ABOUT it,
+    # not about the midpoint of the wideband target.  Bandwidth widens around
+    # the centre; the centre never drifts.
+    rules_run["global"]["freq_mhz_center"] = float(fc_input)
 
     log_box = st.empty()
     log_lines = []
