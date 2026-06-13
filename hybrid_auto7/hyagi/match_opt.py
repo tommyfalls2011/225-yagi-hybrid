@@ -666,5 +666,51 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
         best_elements = _polish_gain(best_elements, rules, de_pos, height_ft,
                                      f_low, f_high, points, target_swr, log_fn)
 
+    # ---- AUTO-FIT BANDWIDTH ------------------------------------------------
+    # User instruction: 'it needs to work outwards from my center frequency
+    # regardless ... if 6 MHz is too large and the freq drifts then only go
+    # as far as it can work and stay within my specs. make it smart not stupid'.
+    #
+    # If the requested half-width is physically too aggressive (band-max SWR
+    # missed the target by more than ~5%), narrow the band 20% at a time
+    # toward the centre and re-run descent from the current best.  Centre is
+    # held by the centre-pin penalty in _objective(), so the antenna's natural
+    # resonance stays at fc; only the BAND we ask the matcher to flatten
+    # shrinks until it CAN meet the user's target SWR.  Reports the band that
+    # actually came true.
+    if goal == "wideband":
+        attempt = 0
+        achieved_hw = 0.5 * (f_high - f_low)
+        target_swr_with_slack = float(target_swr) * 1.05
+        while (best_mx > target_swr_with_slack
+               and achieved_hw > 0.10
+               and attempt < 6):
+            attempt += 1
+            achieved_hw *= 0.80
+            f_low = fc - achieved_hw
+            f_high = fc + achieved_hw
+            rules["global"]["freq_mhz_low"] = f_low
+            rules["global"]["freq_mhz_high"] = f_high
+            if log_fn:
+                log_fn(f"  [auto-fit] band-max {best_mx:.3f} > target {target_swr:.2f} "
+                       f"-- narrowing to +/-{achieved_hw:.2f} MHz "
+                       f"({f_low:.3f}-{f_high:.3f} MHz) and re-tuning")
+            best_vec, best_obj, best_mx = _descend(
+                dict(best_vec), bounds, best_elements, de_pos, rules, height_ft,
+                f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move,
+                fc=fc, goal=goal)
+            best_elements = _apply(best_elements, best_vec, de_pos)
+            if polish_gain and best_mx <= target_swr:
+                best_elements = _polish_gain(
+                    best_elements, rules, de_pos, height_ft,
+                    f_low, f_high, points, target_swr, log_fn)
+            if log_fn:
+                log_fn(f"  [auto-fit] retry {attempt} -> band_max_swr={best_mx:.3f}")
+        if attempt > 0 and log_fn:
+            verdict = ("MET target" if best_mx <= target_swr_with_slack
+                       else "best achievable; user target unmet")
+            log_fn(f"  [auto-fit] settled at half-width +/-{achieved_hw:.2f} MHz "
+                   f"(band {f_low:.3f}-{f_high:.3f}) -- {verdict}")
+
     curve, mx, _av = v2_runner.band_swr_curve(best_elements, f_low, f_high, points, height_ft)
     return best_elements, mx, curve

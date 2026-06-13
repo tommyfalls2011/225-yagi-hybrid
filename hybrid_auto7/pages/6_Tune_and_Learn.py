@@ -385,6 +385,12 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
     csw = float(m.get("center_swr", 0.0))
     import math as _math
     crl = 99.0 if csw <= 1.0 else -20.0 * _math.log10((csw - 1.0) / (csw + 1.0))
+    # The optimizer's auto-fit step may have narrowed the band to honour the
+    # user's target SWR around the locked centre.  Read back the achieved edges
+    # from rules_run (match_opt mutates them in place) so the SWR plot, Report
+    # block and exports all reflect what the matcher actually delivered.
+    achieved_low = float(rules_run["global"].get("freq_mhz_low", band_low))
+    achieved_high = float(rules_run["global"].get("freq_mhz_high", band_high))
     with st.spinner("Building full performance report…"):
         report = perf_report.analyze(result["final_geometry"], rules_run, height_ft=float(height_ft))
     st.session_state["al_result"] = {
@@ -398,7 +404,8 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
         "center_rl": crl,
         "goal": str(tune_goal),
         "score": result["final_score"],
-        "low": float(band_low), "high": float(band_high), "points": int(band_points),
+        "low": achieved_low, "high": achieved_high, "points": int(band_points),
+        "requested_low": float(band_low), "requested_high": float(band_high),
         "height": float(height_ft), "elapsed": elapsed,
         "report": report,
         "taper": v2_runner.taper_signature(),
@@ -429,6 +436,23 @@ if res:
         f"band-max SWR {res['band_max']:.3f}  ·  gain {res['gain']:.2f} dBi  ·  "
         f"F/B {res['fb']:.2f} dB  ·  score {res['score']:+.1f}  ·  {res['elapsed']:.0f}s"
     )
+
+    # Auto-fit verdict: if the matcher narrowed the band to meet the target
+    # SWR around the locked centre, tell the user clearly what they got.
+    req_lo, req_hi = res.get("requested_low"), res.get("requested_high")
+    ach_lo, ach_hi = res["low"], res["high"]
+    if (req_lo is not None and req_hi is not None
+            and (abs(req_lo - ach_lo) > 5e-3 or abs(req_hi - ach_hi) > 5e-3)):
+        req_hw = 0.5 * (req_hi - req_lo)
+        ach_hw = 0.5 * (ach_hi - ach_lo)
+        st.info(
+            f"🤖 **Auto-fit narrowed the band** to keep your centre locked and "
+            f"meet your SWR target. You asked for ±{req_hw:.2f} MHz "
+            f"({req_lo:.3f}–{req_hi:.3f}); achievable was "
+            f"**±{ach_hw:.2f} MHz** ({ach_lo:.3f}–{ach_hi:.3f}). "
+            f"For wider bandwidth on this design, add directors / try a fatter "
+            f"taper, or raise the Target max SWR."
+        )
     if res_names == cur_names and res["geometry"] != geo["elements"]:
         st.warning("📌 This tune is **NOT saved yet.** Click **Adopt tuned geometry "
                    "as current** below to make it your antenna — the **Report** page "
