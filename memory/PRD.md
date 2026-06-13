@@ -303,3 +303,30 @@ even when SWR looks ok. Prior agents (OpenAI, Opus 4.6/4.7) failed.
 - Yagi UI slider 2-18 vs seeder N<=12 (P2): cap UI to 12 or extend seeding.
 - Optionally rescue 1071 hybrid runs from misnamed yagi_history.db.
 - Yagi opt_7el_yagi3.py self-learning (deferred per user; hybrid first).
+
+
+## OWA STAGGER-TUNED MATCHER + .MAA IMPORT (2026-02, current)
+- USER demand: cover the full 25-28 MHz OWA band on a 7-element hybrid; prior matcher
+  returned SWR 4.7 because it treated the driven cell as a single resonant match cell.
+- FIX (hyagi/match_opt.py): added `_stagger_lengths()` + `_apply_stagger_seed()`. When the
+  tuning band is wider than 1 MHz, the seed re-sets the driven cell BEFORE coordinate
+  descent: DE stays at fc, XFRMR is shortened to resonate ~0.45*spread above fc, COUPLER
+  ~0.95*spread above fc (capped at +/-5% of fc, the practical OWA range). Both stay
+  shorter than the DE (validate() rule). This pre-positions the three coupled resonators
+  into the multi-dip OWA basin so descent doesn't get stuck on the single-dip minimum.
+  Restart perturbation widens to 40% of the driven-cell DOF range when bw>1.5 MHz, so
+  restarts JUMP between basins.
+- VALIDATED (25-28 MHz / 3 MHz / 7-el / 30 ft / standard taper):
+  baseline band-max SWR 20.28 -> tuned band-max SWR 1.553 (no restart). SWR curve shows
+  the textbook OWA multi-dip (1.55, 1.25, 1.36, 1.51, 1.55, 1.46, 1.24, 1.12, 1.55).
+  Earlier behaviour was SWR 4.7. Tested via tests/test_owa_stagger.py (5 passing).
+- .MAA IMPORT (hyagi/exporters.py): added `from_maa(text)` parser + UI on
+  pages/1_Antenna_Setup.py (file uploader). Parses MMANA-GAL wire rows, groups by boom
+  X (drops boom segments / G/W_E drops by detecting x1!=x2), reconstructs element names
+  REF/XFRMR/DE/COUPLER/DIRn around the fed (`w<n>c`) DE wire, writes
+  data/current_geometry_v2.json + syncs setup_v2.json director count. Round-trip tested
+  through to_maa()/from_maa(). Tests/test_maa_import.py (5 passing).
+- TUNE & LEARN PAGE: added one-click OWA wideband preset (25.000-28.000 MHz).
+- All 23 tests pass: test_maa_import, test_owa_stagger, test_exporters, test_physics_math,
+  test_resonant_match, test_smart_group_match.
+
