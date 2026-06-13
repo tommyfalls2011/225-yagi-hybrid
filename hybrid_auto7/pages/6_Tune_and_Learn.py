@@ -58,6 +58,16 @@ glb = rules["global"]
 v2_runner.GROUNDED = (str(setup.get("grounding", "insulated")) == "grounded")
 v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
 
+# Initialise band-edge state ONCE so the OWA-preset button (or any future
+# preset) can write to it before the number_input widgets render.  Writing to
+# a widget's key AFTER it has been instantiated raises StreamlitAPIException,
+# so all preset buttons must mutate state up here and let the widgets read it
+# back on the rerun.
+if "al_low" not in st.session_state:
+    st.session_state["al_low"] = float(glb.get("freq_mhz_low", 26.965))
+if "al_high" not in st.session_state:
+    st.session_state["al_high"] = float(glb.get("freq_mhz_high", 27.405))
+
 st.success(
     f"From Antenna Setup → {len(geo['elements'])} elements · height "
     f"{float(setup.get('height_ft', 30.0)):.0f} ft · boom "
@@ -69,13 +79,8 @@ st.success(
 
 c1, c2 = st.columns(2)
 with c1:
-    band_low = st.number_input("Band low (MHz)", value=float(glb.get("freq_mhz_low", 26.965)),
-                               step=0.005, format="%.3f", key="al_low",
-                               help="Lower band edge to hold SWR across (e.g. 26.665 freeband, "
-                                    "25.000 for full OWA wideband)")
-    band_high = st.number_input("Band high (MHz)", value=float(glb.get("freq_mhz_high", 27.405)),
-                                step=0.005, format="%.3f", key="al_high")
-    # OWA wideband preset — one click sets the user's 25-28 MHz OWA band.
+    # OWA wideband preset — must mutate band state BEFORE the band_low/high
+    # widgets render below, otherwise Streamlit rejects the write.
     if st.button("📡 OWA wideband preset (25.000 – 28.000 MHz)",
                  key="al_owa_preset", use_container_width=True,
                  help="Sets the band to the 3 MHz OWA range. The matcher will "
@@ -86,6 +91,12 @@ with c1:
         st.session_state["al_low"] = 25.000
         st.session_state["al_high"] = 28.000
         st.rerun()
+    band_low = st.number_input("Band low (MHz)", step=0.005, format="%.3f",
+                               key="al_low",
+                               help="Lower band edge to hold SWR across (e.g. 26.665 freeband, "
+                                    "25.000 for full OWA wideband)")
+    band_high = st.number_input("Band high (MHz)", step=0.005, format="%.3f",
+                                key="al_high")
     target_swr = st.number_input("Target max SWR", value=1.20, min_value=1.01, max_value=3.0,
                                  step=0.01, format="%.2f", key="al_target")
     tune_goal = st.selectbox(
