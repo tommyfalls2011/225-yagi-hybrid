@@ -97,19 +97,53 @@ def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
     """Mutate the driven cell lengths in `elements` to a stagger-tuned seed
     when the band is wider than ~1 MHz.  Returns the (possibly modified) list.
 
-    Only touches DE/XFRMR/COUPLER lengths and is bounded by the rules; never
-    moves directors / REF (those are owned by the beam phase)."""
+    When the requested band CENTRE is far from the geometry's design centre
+    (rules.global.freq_mhz_center) -- e.g. the user picks 25-28 MHz on a
+    geometry tuned for 27.195 MHz -- we ALSO rescale every passive element
+    (REF + DIRn) length by design_fc / band_fc so the whole array shifts to
+    the new band before the stagger.  Without this, hybrid mode locks the
+    directors at the wrong resonance and the matcher cannot pull the band-
+    low edge below SWR ~3 no matter how the driven cell is stagger-tuned.
+
+    Touches DE/XFRMR/COUPLER lengths last (the stagger) and REF/DIRn lengths
+    first (the rescale).  Element POSITIONS are left alone -- the user
+    controls the boom on the Antenna Setup page."""
     bw = float(f_high) - float(f_low)
-    if bw <= 1.0:
-        return elements                          # not worth re-seeding
+    band_fc = 0.5 * (float(f_low) + float(f_high))
+    design_fc = float(rules.get("global", {}).get("freq_mhz_center", band_fc) or band_fc)
+
+    # 1) Re-scale ALL element lengths if the band centre has shifted from the
+    #    design centre by more than 1% (~ 270 kHz on 11 m).  Below that the
+    #    array's existing tune is close enough; rescaling adds noise.
+    rescaled = False
+    if design_fc > 0 and abs(band_fc - design_fc) / design_fc > 0.01:
+        scale = design_fc / band_fc            # longer elements for lower fc
+        for e in elements:
+            nm = str(e["name"]).upper()
+            # Only the resonant length matters here; clamp into rules bounds.
+            lo, hi = _len_bounds(rules, nm, (140.0, 240.0))
+            new_len = float(e["length_in"]) * scale
+            e["length_in"] = round(min(hi, max(lo, new_len)), 3)
+        rescaled = True
+        if log_fn:
+            log_fn(f"  [band-shift] band_fc={band_fc:.3f} MHz vs design "
+                   f"{design_fc:.3f} MHz -> rescale all element lengths "
+                   f"by {scale:.4f}")
+
+    if bw <= 1.0 and not rescaled:
+        return elements                        # nothing more to do for narrow
+
     de = _el(elements, "DE")
     xf = _el(elements, "XFRMR")
     cp = _el(elements, "COUPLER")
     if de is None or (xf is None and cp is None):
         return elements
+
+    # 2) Stagger-tune the driven cell about the BAND centre (NOT the design
+    #    centre) so the three resonators sit across the requested band.
     de_lo, de_hi = _len_bounds(rules, "DE", (185.0, 225.0))
     de_len_seed = min(de_hi, max(de_lo, float(de["length_in"])))
-    _, xf_t, cp_t = _stagger_lengths(de_len_seed, f_low, f_high, fc)
+    _, xf_t, cp_t = _stagger_lengths(de_len_seed, f_low, f_high, band_fc)
     de["length_in"] = round(de_len_seed, 3)
     if xf is not None:
         lo, hi = _len_bounds(rules, "XFRMR", (170.0, 210.0))
@@ -118,7 +152,8 @@ def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
         lo, hi = _len_bounds(rules, "COUPLER", (150.0, 200.0))
         cp["length_in"] = round(min(hi, max(lo, min(de_len_seed - 1.0, cp_t))), 3)
     if log_fn:
-        log_fn(f"  [stagger-seed] bw={bw:.2f} MHz  DE={de['length_in']:.2f}  "
+        log_fn(f"  [stagger-seed] bw={bw:.2f} MHz  band_fc={band_fc:.3f}  "
+               f"DE={de['length_in']:.2f}  "
                f"XFRMR={xf['length_in'] if xf else 0:.2f}  "
                f"COUPLER={cp['length_in'] if cp else 0:.2f}")
     return elements
@@ -554,9 +589,22 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
         # (see _stagger_lengths docstring).  No-op for narrow bands / no XFRMR.
         elements = _apply_stagger_seed(copy.deepcopy(elements), rules,
                                        f_low, f_high, fc, log_fn=log_fn)
-        return _optimize_hybrid(elements, rules, height_ft, target_swr, points,
-                                f_low, f_high, fc, tune_spacings, steps, log_fn,
-                                move_log, on_move, iters=max(2, int(restarts) + 1))
+        # WIDE-BAND HYBRID: > 1.5 MHz is beyond what locking the directors can
+        # do.  Physically the array's resonant centre must move with the band,
+        # which the cell-only matcher cannot achieve.  Fall through to the
+        # wideband matcher (all element lengths free) and then polish the gain
+        # under an SWR ceiling -- the user gets a real OWA flat-SWR result
+        # instead of the locked SWR ~3 the cell-only hybrid produces.
+        if (f_high - f_low) > 1.5:
+            if log_fn:
+                log_fn("  [hybrid] band > 1.5 MHz -> using wide-hybrid path "
+                       "(full-array wideband match + gain polish under SWR ceiling)")
+            goal = "wideband"
+            polish_gain = True
+        else:
+            return _optimize_hybrid(elements, rules, height_ft, target_swr, points,
+                                    f_low, f_high, fc, tune_spacings, steps, log_fn,
+                                    move_log, on_move, iters=max(2, int(restarts) + 1))
 
     if goal == "wideband":
         elements = _apply_stagger_seed(copy.deepcopy(elements), rules,
