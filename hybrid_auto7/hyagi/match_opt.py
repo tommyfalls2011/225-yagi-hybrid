@@ -277,7 +277,23 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
         # |Xc| term makes zero reactance a hard priority.  A light band term keeps
         # the wideband edges from blowing up.
         return csw + 0.04 * abs(Xc) + 0.30 * max(0.0, mx - 1.0), mx
-    return mx + 0.05 * av, mx
+    # ---- WIDEBAND / HYBRID: pin the centre, then flatten ---------------------
+    # User requirement: 'the resonant freq should ALWAYS be what I set it to'.
+    # Even on extreme widebands (4-6 MHz) the matcher's coordinate descent will
+    # happily walk every element to land a minimum at some convenient corner
+    # frequency -- 25.2 or 27.6 MHz instead of the user's 27.195.  So we add a
+    # centre-pin penalty: the deeper the user's centre SWR is from 1.0, the more
+    # painful the objective.  A 4x weight makes the matcher refuse to give up
+    # the centre to get a better band-edge.
+    base = mx + 0.05 * av
+    if fc is None:
+        return base, mx
+    Rc, Xc = _center_rx(curve, fc)
+    csw_centre = v2_runner.swr(Rc, Xc)
+    # +4 * (centre SWR - 1) is large enough to dominate when the centre falls
+    # apart (SWR > 2 -> +4 added) but cheap when centre is well-matched (<= 1.5).
+    pin = 4.0 * max(0.0, csw_centre - 1.0)
+    return base + pin, mx
 
 
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
