@@ -525,22 +525,58 @@ st.download_button(
     key="rp_dl_html",
 )
 
+import csv
+import io
+
+
+def _cut_sheet_csv(cut_rows, boom_len_in, generated, height_ft, taper_sig,
+                   band_low, band_high):
+    """Bench-day cut sheet as CSV.  One row per element, plus a metadata
+    header block at the top so you can print it from a spreadsheet, mail
+    it to a fabricator, or paste into a parts list.  Imperial fractions
+    are preserved as the visible strings the user already trusts."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["hybrid_auto7 cut sheet"])
+    w.writerow(["Generated", generated])
+    w.writerow(["Antenna height (ft)", f"{height_ft:.1f}"])
+    w.writerow(["Active taper", taper_sig])
+    w.writerow(["Band", f"{band_low:.3f}-{band_high:.3f} MHz"])
+    w.writerow([])
+    w.writerow(["Element", "Overall length",
+                "Half (centre->tip)", "Boom position", "Spacing to next",
+                "Tubing (centre->tip, per half)"])
+    for n, L, H, pos, sp, s in cut_rows:
+        w.writerow([n, L, H, pos, sp, s])
+    w.writerow([])
+    w.writerow(["Boom length (REF -> last director)", fmt_in(boom_len_in)])
+    return buf.getvalue()
+
+
 # Existing downloads kept available below.
 st.markdown("**Other downloads**")
 rules_exp = json.loads(json.dumps(rules))
 rules_exp["global"]["freq_mhz_low"] = f_low
 rules_exp["global"]["freq_mhz_high"] = f_high
-d1, d2, d3 = st.columns(3)
+d1, d2, d3, d4 = st.columns(4)
 with d1:
+    st.download_button("Cut sheet (CSV)",
+                       data=_cut_sheet_csv(cut_rows, boom_len_in, generated,
+                                           height_ft, v2_runner.taper_signature(),
+                                           rep['band_low_mhz'], rep['band_high_mhz']),
+                       file_name=f"cut_sheet_{datetime.datetime.now():%Y%m%d}.csv",
+                       mime="text/csv",
+                       use_container_width=True, key="rp_dl_csv")
+with d2:
     st.download_button("Report (JSON)", data=json.dumps(rep, indent=2),
                        file_name="antenna_report.json",
                        use_container_width=True, key="rp_dl_json")
-with d2:
+with d3:
     st.download_button(".nec (NEC-2)",
                        data=exporters.to_nec(els, rules_exp, height_ft=height_ft),
                        file_name="antenna.nec", mime="text/plain",
                        use_container_width=True, key="rp_dl_nec")
-with d3:
+with d4:
     st.download_button(
         ".maa (MMANA-GAL)",
         data=exporters.to_maa(
