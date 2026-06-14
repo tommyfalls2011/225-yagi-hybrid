@@ -277,23 +277,48 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
         # |Xc| term makes zero reactance a hard priority.  A light band term keeps
         # the wideband edges from blowing up.
         return csw + 0.04 * abs(Xc) + 0.30 * max(0.0, mx - 1.0), mx
-    # ---- WIDEBAND / HYBRID: pin the centre, then flatten ---------------------
-    # User requirement: 'the resonant freq should ALWAYS be what I set it to'.
-    # Even on extreme widebands (4-6 MHz) the matcher's coordinate descent will
-    # happily walk every element to land a minimum at some convenient corner
-    # frequency -- 25.2 or 27.6 MHz instead of the user's 27.195.  So we add a
-    # centre-pin penalty: the deeper the user's centre SWR is from 1.0, the more
-    # painful the objective.  A 4x weight makes the matcher refuse to give up
-    # the centre to get a better band-edge.
-    base = mx + 0.05 * av
+    # ---- WIDEBAND / HYBRID priority ladder (user specification) -------------
+    #
+    #   1. Centre reactance X must sit in +/-2.5 ohm (resonant).  Inside this
+    #      window the cost is small and lets the search wander to find the
+    #      best SWR / RL combo; OUTSIDE the window the cost ramps hard so the
+    #      matcher refuses to leave the resonant zone for a better band-edge.
+    #
+    #   2. Return loss (RL) at centre -- the higher the better -- gives a
+    #      light reward.  Caps at 40 dB so an unrealistically deep null can't
+    #      dominate the gain/F-B step that comes next.
+    #
+    #   3. SWR at centre target is 1.00:1; up to 1.07:1 is tolerated when X
+    #      and RL would otherwise have to give up.  Encoded as the 4x centre
+    #      pin we already had -- centre SWR 1.07 only costs +0.28 here, while
+    #      centre SWR 2 costs +4.0, so the matcher will spend SWR slack first
+    #      when it has to.
+    #
+    #   4. Band edges (mx + 0.05*av) are the LAST term -- a wide flat band is
+    #      desirable but never at the cost of (1)-(3).  This is also what the
+    #      auto-fit loop narrows when it can't be met.
     if fc is None:
-        return base, mx
+        return mx + 0.05 * av, mx
     Rc, Xc = _center_rx(curve, fc)
     csw_centre = v2_runner.swr(Rc, Xc)
-    # +4 * (centre SWR - 1) is large enough to dominate when the centre falls
-    # apart (SWR > 2 -> +4 added) but cheap when centre is well-matched (<= 1.5).
-    pin = 4.0 * max(0.0, csw_centre - 1.0)
-    return base + pin, mx
+    abs_x = abs(Xc)
+    # Reactance ladder: cheap up to +/-2.5, brutal beyond.
+    if abs_x <= 2.5:
+        x_term = 0.40 * abs_x                          # max 1.0 at +/-2.5
+    else:
+        x_term = 1.0 + 5.0 * (abs_x - 2.5)             # >>5x slope after that
+    # Centre-SWR pin (priority 3).  Slack of 1.07 only adds +0.28.
+    swr_pin = 4.0 * max(0.0, csw_centre - 1.0)
+    # Return-loss bonus (priority 2) -- small reward for high RL at centre.
+    if csw_centre <= 1.0:
+        rl_bonus = -2.0                                 # cap the bonus
+    else:
+        import math
+        rl_db = -20.0 * math.log10((csw_centre - 1.0) / (csw_centre + 1.0))
+        rl_bonus = -0.05 * min(40.0, rl_db)             # up to -2.0
+    # Band edges (priority 4) -- last, lightest term.
+    band_term = mx + 0.05 * av
+    return band_term + swr_pin + x_term + rl_bonus, mx
 
 
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
@@ -336,9 +361,14 @@ def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
 def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
                  target_swr, log_fn):
     """After SWR is under target, recover gain/F-B by re-tuning the passive
-    elements (REF + director lengths) with the FULL pattern eval, rejecting any
-    move that pushes band-max SWR back over target. Keeps the wideband match
-    while climbing back toward maximum gain."""
+    elements (REF + director lengths) with the FULL pattern eval.
+
+    User priority (rule 4): 'gain over F/B, but only if F/B is HIGH; if F/B is
+    LOW lose some gain to recoup F/B.'  Encoded as an adaptive F/B weight that
+    grows hard the lower F/B drops below 15 dB.  A trial move that would push
+    F/B below 12 dB is rejected outright.  Above ~18 dB, F/B is fine and we
+    weight gain more.  Move is also rejected if it would lift centre |X|
+    above 2.5 ohm or band-max SWR back over target."""
     v2_runner.EVAL_FREQ_POINTS = max(7, int(points))
     keys = [e["name"] for e in elements
             if str(e["name"]).upper().startswith("DIR")
@@ -349,11 +379,25 @@ def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
     def composite(els):
         m = v2_runner.evaluate(els, rules, height_ft=height_ft)
         if "error" in m:
-            return -1e9, 99.0
-        return m["gain_dbi"] + 0.15 * m["fb_db"], m["max_swr"]
+            return -1e9, 99.0, 0.0, 0.0, 99.0
+        fb = float(m.get("fb_db", 0.0))
+        # Adaptive F/B weight: tiny when F/B already high, dominates when low.
+        if fb >= 18.0:
+            fb_w = 0.10
+        elif fb >= 15.0:
+            fb_w = 0.25
+        elif fb >= 12.0:
+            fb_w = 0.60
+        else:
+            fb_w = 1.20                  # below 12 dB, F/B dominates the score
+        return (m["gain_dbi"] + fb_w * fb,
+                m["max_swr"],
+                fb,
+                abs(float(m.get("center_x", 0.0))),
+                float(m.get("center_swr", 99.0)))
 
     cur = copy.deepcopy(elements)
-    best_score, _sw = composite(cur)
+    best_score, _sw, _fb_now, _ax_now, _csw_now = composite(cur)
     for step in (2.0, 1.0):
         improved, rounds = True, 0
         while improved and rounds < 6:
@@ -372,14 +416,25 @@ def _polish_gain(elements, rules, de_pos, height_ft, f_low, f_high, points,
                         trial, f_low, f_high, points, height_ft)
                     if mx > target_swr:
                         continue
-                    sc, _ = composite(trial)
+                    sc, _, fb_t, ax_t, csw_t = composite(trial)
+                    # Reject moves that violate priorities 1 (X) / 3 (SWR) /
+                    # 4 (F/B floor) -- even if pure gain would go up.
+                    if ax_t > 2.5:
+                        continue
+                    if csw_t > 1.07:
+                        continue
+                    if fb_t < 12.0:
+                        continue
                     if sc > best_score + 1e-4:
                         best_score, cur, improved = sc, trial, True
                         base_len = nl
             if log_fn:
                 gm = v2_runner.evaluate(cur, rules, height_ft=height_ft)
                 log_fn(f"    [gain-polish] step={step} round={rounds} "
-                       f"gain={gm.get('gain_dbi',0):.2f} fb={gm.get('fb_db',0):.2f}")
+                       f"gain={gm.get('gain_dbi',0):.2f} "
+                       f"fb={gm.get('fb_db',0):.2f} "
+                       f"|X|={abs(float(gm.get('center_x',0))):.2f} "
+                       f"csw={float(gm.get('center_swr',0)):.3f}")
     return cur
 
 
