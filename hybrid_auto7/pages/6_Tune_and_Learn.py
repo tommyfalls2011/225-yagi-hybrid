@@ -347,6 +347,13 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
     # not about the midpoint of the wideband target.  Bandwidth widens around
     # the centre; the centre never drifts.
     rules_run["global"]["freq_mhz_center"] = float(fc_input)
+    # Boom HARD CAP -- propagated into rules so the optimizer's _apply() guard
+    # rejects any move pushing the last director past the cap, regardless of
+    # tune_spacings or warm-start state.  Empty / FREE mode -> no cap.
+    if setup.get("boom_mode") == "fixed" and setup.get("boom_length_in"):
+        rules_run["global"]["boom_max_in"] = float(setup["boom_length_in"])
+    else:
+        rules_run["global"]["boom_max_in"] = 0.0
 
     log_box = st.empty()
     log_lines = []

@@ -223,7 +223,7 @@ def _apply_spacings(e, vec):
             prev_pos = float(d["position_in"])
 
 
-def _apply(elements, vec, de_pos):
+def _apply(elements, vec, de_pos, rules=None):
     e = copy.deepcopy(elements)
     de = _el(e, "DE")
     de["length_in"] = vec["de_len"]
@@ -245,6 +245,23 @@ def _apply(elements, vec, de_pos):
         if key.endswith("_len") and key[:-4].upper().startswith("DIR"):
             _el(e, key[:-4])["length_in"] = val
     _apply_spacings(e, vec)
+    # ---- Hard boom-length cap (defense in depth) ---------------------------
+    # If the user locked the boom on Antenna Setup, rules.global.boom_max_in
+    # carries the cap.  Coordinate descent should already keep positions
+    # fixed (tune_spacings=False) so this rarely triggers, but a too-long
+    # warm-start geometry, a director-len move that subtly shifts a position
+    # via _apply_spacings, or a future code path that flips tune_spacings on
+    # by mistake should NEVER be able to push the boom past the cap.  Compress
+    # the directors proportionally if they overshoot.
+    cap_in = float((rules or {}).get("global", {}).get("boom_max_in") or 0.0)
+    if cap_in > 0.0:
+        els = sorted(e, key=lambda el: float(el["position_in"]))
+        p0 = float(els[0]["position_in"])
+        span = float(els[-1]["position_in"]) - p0
+        if span > cap_in + 0.5:
+            scale = cap_in / span
+            for el in els:
+                el["position_in"] = round(p0 + (float(el["position_in"]) - p0) * scale, 4)
     return e
 
 
@@ -324,7 +341,7 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
              points, steps, target, log_fn, move_log=None, on_move=None,
              fc=None, goal="wideband"):
-    best_obj, best_mx = _objective(_apply(elements, vec, de_pos), rules,
+    best_obj, best_mx = _objective(_apply(elements, vec, de_pos, rules), rules,
                                    height_ft, f_low, f_high, points, fc, goal)
     keys = list(vec.keys())
     for step in steps:
@@ -338,7 +355,7 @@ def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
                     nv[k] = round(min(hi, max(lo, vec[k] + d)), 3)
                     if abs(nv[k] - vec[k]) < 1e-9:
                         continue
-                    obj, mx = _objective(_apply(elements, nv, de_pos), rules,
+                    obj, mx = _objective(_apply(elements, nv, de_pos, rules), rules,
                                          height_ft, f_low, f_high, points, fc, goal)
                     accept = obj < best_obj - 1e-4
                     move = {"dof": k, "value": nv[k],
@@ -552,7 +569,7 @@ def _match_cell(cur, rules, height_ft, f_low, f_high, points, target, fc, steps,
     best_vec, _o, mx = _descend(vec, bounds, cur, de_pos, rules, height_ft,
                                 f_low, f_high, points, steps, target, log_fn,
                                 move_log, on_move, fc=fc, goal="wideband")
-    return _apply(cur, best_vec, de_pos), mx
+    return _apply(cur, best_vec, de_pos, rules), mx
 
 
 def _hybrid_overall(els, rules, height_ft, f_low, f_high, points, target):
@@ -713,7 +730,7 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
         if o < best_obj - 1e-4:
             best_vec, best_obj, best_mx = v, o, mx
 
-    best_elements = _apply(elements, best_vec, de_pos)
+    best_elements = _apply(elements, best_vec, de_pos, rules)
 
     # Recover gain/F-B if we are comfortably under the SWR target (wideband goal).
     # In resonant mode we do NOT polish, to avoid disturbing the centre match.
@@ -754,7 +771,7 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
                 dict(best_vec), bounds, best_elements, de_pos, rules, height_ft,
                 f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move,
                 fc=fc, goal=goal)
-            best_elements = _apply(best_elements, best_vec, de_pos)
+            best_elements = _apply(best_elements, best_vec, de_pos, rules)
             if polish_gain and best_mx <= target_swr:
                 best_elements = _polish_gain(
                     best_elements, rules, de_pos, height_ft,
