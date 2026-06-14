@@ -140,11 +140,32 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
     takeoff = 90.0 - pk_theta
 
     back_phi = (pk_phi + 180.0) % 360.0
+
+    # F/B and F/R must be measured AT the same elevation as the forward main
+    # lobe, otherwise high-angle ground-reflection rear lobes that exist on
+    # any horizontal beam over real ground get mixed into the rejection
+    # number and the answer comes back 4-7 dB pessimistic.  This is exactly
+    # the cut v2_runner.evaluate() uses; the two paths must agree or users
+    # see two different F/B values for the same antenna (one on the Tune &
+    # Learn result panel, one on the Report).
+    REAR_AZ_HALF = 30.0   # +/-30 deg around back azimuth -> F/B
+    ELEV_HALF    = 10.0   # +/-10 deg around forward peak elevation
     rear = [g for (t, p, g) in pat
-            if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= 30.0]
+            if abs(t - pk_theta) <= ELEV_HALF
+            and abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_AZ_HALF]
+    if not rear:          # fallback: same azimuth cone, ANY elevation
+        rear = [g for (t, p, g) in pat
+                if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_AZ_HALF]
     fb = pk_gain - (max(rear) if rear else pk_gain - 40.0)
+
+    # Front-to-rear: whole rear HEMISPHERE (|delta-phi| > 90) at the main-lobe
+    # elevation -- still elevation-aware for the same reason.
     rear_hemi = [g for (t, p, g) in pat
-                 if abs(((p - pk_phi + 180.0) % 360.0) - 180.0) > 90.0]
+                 if abs(t - pk_theta) <= ELEV_HALF
+                 and abs(((p - pk_phi + 180.0) % 360.0) - 180.0) > 90.0]
+    if not rear_hemi:
+        rear_hemi = [g for (t, p, g) in pat
+                     if abs(((p - pk_phi + 180.0) % 360.0) - 180.0) > 90.0]
     fr = pk_gain - (max(rear_hemi) if rear_hemi else pk_gain - 40.0)
 
     az_cut = [(p, g) for (t, p, g) in pat if abs(t - pk_theta) < 1e-6]
@@ -166,6 +187,16 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
     hi = sweep_hi if sweep_hi is not None else max(f_high, fc) + 0.6
     npts = max(5, int(round((hi - lo) / sweep_step)) + 1)
     curve, band_max, band_avg = v2_runner.band_swr_curve(elements, lo, hi, npts, height_ft)
+    # Make sure the design centre is sampled exactly so 'min SWR @ ...' lines
+    # up with what the matcher reports as the centre SWR.  The uniform grid
+    # rarely lands on fc, which made the Report show e.g. 'min 1.013 @ 27.170'
+    # while the Result panel showed centre SWR 1.000 at 27.195.  Inserting fc
+    # as an extra sample point keeps the two views in sync.
+    if curve and all(abs(c[0] - fc) > 1e-3 for c in curve):
+        extra_curve, _emx, _eav = v2_runner.band_swr_curve(
+            elements, fc, fc, 1, height_ft)
+        if extra_curve:
+            curve = sorted(curve + extra_curve, key=lambda c: c[0])
     fmin_swr, min_swr = (fc, 99.0)
     if curve:
         fmin_swr, _R, _X, min_swr = min(curve, key=lambda c: c[3])
