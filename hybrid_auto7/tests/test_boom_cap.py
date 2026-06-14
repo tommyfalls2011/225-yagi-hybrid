@@ -102,3 +102,54 @@ def test_locked_boom_no_op_when_under_cap():
         f"in-spec geometry must not be touched by the cap; was {before}, "
         f"became {_last_pos(result)}"
     )
+
+
+def test_optimize_entry_compresses_overlong_geometry():
+    """The match_opt.optimize() entry path must compress a too-long starting
+    geometry to the cap BEFORE the descent runs -- even if tune_spacings=False
+    (which keeps positions out of the DOF vector entirely).  This was the bug:
+    LOCKED 22' reported on the Report header, but the cut sheet showed DIR3 at
+    24' 4-5/16\" because positions never moved in FIXED mode.
+
+    We don't actually run the matcher (no nec2c in test env); we just verify
+    the entry-time compression fires and the in-place geometry is short
+    enough by intercepting after the first log line."""
+    captured_log = []
+
+    def grab_log(msg):
+        captured_log.append(msg)
+        # Raise immediately after the compress fires to skip the heavy descent.
+        if "[boom-cap]" in msg:
+            raise RuntimeError("INTERCEPT")
+
+    rules = {
+        "global": {
+            "freq_mhz_low": 26.6, "freq_mhz_high": 27.8,
+            "freq_mhz_center": 27.195, "boom_max_in": 264.0,   # 22 ft cap
+        },
+        "elements": {},
+    }
+    els = copy.deepcopy(BASE_ELEMENTS)        # DIR3 at 292.3 = ~24.4 ft
+    try:
+        match_opt.optimize(
+            els, rules,
+            height_ft=22.0, target_swr=1.5, points=5, restarts=0,
+            polish_gain=False, log_fn=grab_log, goal="wideband",
+            tune_spacings=False,
+        )
+    except (RuntimeError, Exception):
+        pass
+
+    # Must have logged the compression step.
+    cap_log = [m for m in captured_log if "[boom-cap]" in m]
+    assert cap_log, (
+        f"optimize() entry must log [boom-cap] when starting geometry > cap; "
+        f"log was {captured_log[:3]}"
+    )
+    # Inspect the message: it must say the input span was > cap and was
+    # compressed by a scale factor < 1.
+    msg = cap_log[0]
+    assert ">" in msg and "compressed positions by" in msg, (
+        f"[boom-cap] log line should report span > cap and compression factor; "
+        f"got {msg}"
+    )

@@ -655,6 +655,28 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     f_high = float(glb["freq_mhz_high"])
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
 
+    # ---- HARD CAP: enforce the user's locked boom length up-front -----------
+    # _apply()'s position clamp only fires when a move CHANGES positions; in
+    # FIXED mode tune_spacings=False so positions never move and the clamp
+    # never sees the geometry.  Result: a too-long starting geometry sails
+    # through unchanged and the cut sheet ends up longer than the lock.
+    # Compress at entry instead so the matcher / report / cut-sheet all
+    # operate on a geometry that already fits the cap.  No-op when FREE.
+    cap_in = float(glb.get("boom_max_in") or 0.0)
+    if cap_in > 0.0 and elements:
+        elements = copy.deepcopy(elements)
+        els_sorted = sorted(elements, key=lambda e: float(e["position_in"]))
+        p0 = float(els_sorted[0]["position_in"])
+        span = float(els_sorted[-1]["position_in"]) - p0
+        if span > cap_in + 0.5:
+            scale = cap_in / span
+            for el in elements:
+                el["position_in"] = round(p0 + (float(el["position_in"]) - p0) * scale, 4)
+            if log_fn:
+                log_fn(f"  [boom-cap] starting geometry span {span:.2f}\" > "
+                       f"locked cap {cap_in:.2f}\" -- compressed positions by "
+                       f"x{scale:.4f} so the lock is honoured.")
+
     if goal == "hybrid":
         # Stagger-tune the driven cell when the band is wide -- positions the
         # three coupled resonators in the right basin for multi-MHz coverage
