@@ -23,6 +23,7 @@ import subprocess
 import tempfile
 
 from . import v2_runner
+from . import fb
 
 _EFF_RE = re.compile(r"EFFICIENCY\s*=\s*([\d.+\-Ee]+)\s*Percent")
 
@@ -139,34 +140,13 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
     pk_theta, pk_phi, pk_gain = peak
     takeoff = 90.0 - pk_theta
 
-    back_phi = (pk_phi + 180.0) % 360.0
-
-    # F/B and F/R must be measured AT the same elevation as the forward main
-    # lobe, otherwise high-angle ground-reflection rear lobes that exist on
-    # any horizontal beam over real ground get mixed into the rejection
-    # number and the answer comes back 4-7 dB pessimistic.  This is exactly
-    # the cut v2_runner.evaluate() uses; the two paths must agree or users
-    # see two different F/B values for the same antenna (one on the Tune &
-    # Learn result panel, one on the Report).
-    REAR_AZ_HALF = 30.0   # +/-30 deg around back azimuth -> F/B
-    ELEV_HALF    = 10.0   # +/-10 deg around forward peak elevation
-    rear = [g for (t, p, g) in pat
-            if abs(t - pk_theta) <= ELEV_HALF
-            and abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_AZ_HALF]
-    if not rear:          # fallback: same azimuth cone, ANY elevation
-        rear = [g for (t, p, g) in pat
-                if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_AZ_HALF]
-    fb = pk_gain - (max(rear) if rear else pk_gain - 40.0)
-
-    # Front-to-rear: whole rear HEMISPHERE (|delta-phi| > 90) at the main-lobe
-    # elevation -- still elevation-aware for the same reason.
-    rear_hemi = [g for (t, p, g) in pat
-                 if abs(t - pk_theta) <= ELEV_HALF
-                 and abs(((p - pk_phi + 180.0) % 360.0) - 180.0) > 90.0]
-    if not rear_hemi:
-        rear_hemi = [g for (t, p, g) in pat
-                     if abs(((p - pk_phi + 180.0) % 360.0) - 180.0) > 90.0]
-    fr = pk_gain - (max(rear_hemi) if rear_hemi else pk_gain - 40.0)
+    # F/B and F/R come from the SINGLE textbook formula in hyagi.fb so the
+    # Result panel and this Report return identical numbers for the same
+    # antenna.  See hyagi/fb.py: F/B is the rear sample at peak elevation
+    # + 180 deg azimuth, bilinearly interpolated from the 5x5 nec2c grid;
+    # F/R is the loudest sample anywhere in the rear hemisphere.
+    fb_db_val = fb.front_to_back(pat, peak=peak)
+    fr_db_val = fb.front_to_rear(pat, peak=peak)
 
     az_cut = [(p, g) for (t, p, g) in pat if abs(t - pk_theta) < 1e-6]
     el_cut = [(90.0 - t, g) for (t, p, g) in pat if abs(p - pk_phi) < 1e-6]
@@ -214,8 +194,8 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
         "ground_gain_db": round(pk_gain - fs_gain, 2),
         "power_mult_isotropic": round(lin_iso, 1),
         "power_mult_dipole": round(lin_dipole, 2),
-        "fb_db": round(fb, 2),
-        "fr_db": round(fr, 2),
+        "fb_db": round(fb_db_val, 2),
+        "fr_db": round(fr_db_val, 2),
         "takeoff_deg": round(takeoff, 1),
         "az_beamwidth_deg": round(az_bw, 1) if az_bw else None,
         "el_beamwidth_deg": round(el_bw, 1) if el_bw else None,

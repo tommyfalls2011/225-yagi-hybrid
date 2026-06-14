@@ -11,6 +11,7 @@ import tempfile
 import os
 import json
 from . import v2_scorer
+from . import fb
 
 INCH = 0.0254
 FT   = 0.3048
@@ -432,24 +433,13 @@ def evaluate(elements, rules, height_ft=30.0, n_points=None):
         next((b for b in pattern_blocks if b), [])
     max_gain = max(t[2] for t in pattern)
     peak = max(pattern, key=lambda t: t[2])
+    # F/B and F/R come from the SINGLE textbook definition in hyagi.fb so the
+    # matcher's Result panel, perf_report.analyze(), and any other surface that
+    # reads F/B all return the SAME number for the SAME antenna at the same fc.
+    # See hyagi/fb.py for the formula (rear sample at peak elevation + 180 deg
+    # azimuth, bilinearly interpolated from the 5x5 nec2c grid).
+    fb_db = fb.front_to_back(pattern, peak=peak)
     peak_theta, peak_phi, _ = peak
-    back_phi = (peak_phi + 180.0) % 360.0
-    # Front-to-back must compare the forward peak against the REAR LOBE max
-    # *at the forward main-lobe elevation* (theta within +/-ELEV_HALF of the
-    # peak), inside +/-REAR_HALF deg of the back azimuth.  Searching ALL
-    # elevations conflated high-angle ground/rear lobes into F/B and understated
-    # it; reading a single 180-deg point can hit a null and overstate it to a
-    # physically impossible 60-100 dB.  This cut avoids both.
-    REAR_HALF = 30.0
-    ELEV_HALF = 10.0
-    rear_vals = [g for (t, p, g) in pattern
-                 if abs(t - peak_theta) <= ELEV_HALF
-                 and abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
-    if not rear_vals:   # fallback: whole rear hemisphere if the elev cut is empty
-        rear_vals = [g for (t, p, g) in pattern
-                     if abs(((p - back_phi + 180.0) % 360.0) - 180.0) <= REAR_HALF]
-    back_gain = max(rear_vals) if rear_vals else (max_gain - 40.0)
-    fb_db = max_gain - back_gain
     return {
         "max_swr": max_swr, "avg_swr": avg_swr,
         "center_swr": swr(Rc, Xc),
