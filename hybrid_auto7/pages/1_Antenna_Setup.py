@@ -117,19 +117,36 @@ with b1:
     if st.button("💾 Save setup", type="primary", use_container_width=True, key="su_save"):
         # Persist the boom lock as inches (single canonical unit).  `free` mode
         # clears the lock so the tuner is allowed to move spacings.
+        new_cap_in = (float(boom_length_ft) * 12.0
+                      if (boom_mode == "fixed" and boom_length_ft) else None)
         _save = {
             "n_directors": int(n_dir),
             "boom_mode": str(boom_mode),
-            "boom_length_in": (float(boom_length_ft) * 12.0
-                               if (boom_mode == "fixed" and boom_length_ft) else None),
+            "boom_length_in": new_cap_in,
             "height_ft": float(height_ft),
             "boom_diameter_in": float(boom_dia),
             "grounding": str(grounding),
         }
         SETUP_PATH.write_text(json.dumps(_save, indent=2))
-        st.success("Setup saved. Element count applies after you Build / reseed "
-                   "(if you changed it). Height / boom / grounding apply on the "
-                   "next tune.")
+        # Auto-rescale the current geometry to fit EXACTLY when FIXED+cap is
+        # saved.  User's new spec: 'the boom should be the locked length, not
+        # shorter and not longer.'  REF -> 0, last DIR -> cap, middle elements
+        # scaled proportionally (the matcher can re-slide them next tune).
+        rescale_msg = ""
+        if new_cap_in and geo.get("elements"):
+            els_now = sorted(geo["elements"], key=lambda x: float(x["position_in"]))
+            p0 = float(els_now[0]["position_in"])
+            span = float(els_now[-1]["position_in"]) - p0
+            if span > 0 and abs(span - new_cap_in) > 0.5:
+                for el in els_now:
+                    el["position_in"] = round(
+                        (float(el["position_in"]) - p0) * new_cap_in / span, 4)
+                GEO_PATH.write_text(json.dumps({"elements": els_now}, indent=2))
+                rescale_msg = (f"  Geometry rescaled: REF @ 0\", last DIR @ "
+                               f"{fmt_in(new_cap_in)}.")
+        st.cache_data.clear()
+        st.success("Setup saved." + rescale_msg + "  Element count applies "
+                   "after you Build / reseed (if you changed it).")
 with b2:
     if st.button("🛠️ Build / reseed geometry to this element count",
                  use_container_width=True, key="su_build"):

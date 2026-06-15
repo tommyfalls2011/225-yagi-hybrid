@@ -66,4 +66,14 @@ def build_geometry(n_directors, center_mhz=27.195, max_boom_in=None):
         length = round(max(0.405 * wl, 0.449 * wl - 0.009 * wl * (k - 1)), 1)
         elements.append({"name": f"DIR{k}", "position_in": pos, "length_in": length})
 
+    # When the boom is LOCKED to an exact length, force REF at exactly 0 and
+    # the last director at exactly max_boom_in.  Middle elements are rescaled
+    # proportionally; the matcher will re-slide them on its first tune.
+    if max_boom_in is not None and n_directors > 0:
+        cap = float(max_boom_in)
+        last_pos = elements[-1]["position_in"]
+        if last_pos > 0:
+            for el in elements:
+                el["position_in"] = round(float(el["position_in"]) * cap / last_pos, 4)
+
     return {"elements": elements}

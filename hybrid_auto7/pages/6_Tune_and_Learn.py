@@ -383,7 +383,14 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
         use_matcher=use_matcher,
         polish_gain=bool(polish),
         tune_goal=str(tune_goal),
-        tune_spacings=(str(setup.get("boom_mode", "fixed")) == "free"),
+        # tune_spacings enabled in BOTH cases that need middle-element sliding:
+        #   * FREE: no constraints at all.
+        #   * FIXED + cap > 0: REF/last DIR pinned (in _apply), middle elements
+        #     slide between them.
+        # FIXED without a cap is unusual now but kept for safety -> positions
+        # locked.  See pages/1_Antenna_Setup.py for the cap entry.
+        tune_spacings=((str(setup.get("boom_mode", "fixed")) == "free")
+                       or bool(setup.get("boom_length_in"))),
         grounded=(str(setup.get("grounding", "insulated")) == "grounded"),
         boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
     )

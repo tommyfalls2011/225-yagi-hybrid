@@ -1,19 +1,20 @@
-"""Boom HARD CAP regression -- defence in depth.
+"""Boom HARD CAP / endpoint-pin regression tests.
 
-User wants: when boom_mode='fixed' and a boom length is specified, NOTHING
-in the optimizer or any downstream layer should be able to push the last
-director past the cap.
+New spec from user: 'lock REF and last DIR on antenna -- but can move the
+other elements not just adjust lengths.  When in free mode let AI do
+whatever it needs to get my numbers.'
 
-This was previously enforced only by:
-  (a) hybrid_seed.build_geometry compressing seeded spacings
-  (b) page-level 'rescale to fit' button on .maa import / setup load
-  (c) the matcher running with tune_spacings=False in FIXED mode (so
-      positions don't move at all)
+This module verifies the THREE places that enforce the lock:
 
-(c) only works if the STARTING geometry already fits.  A too-long warm-start
-geometry from the learning DB, an old saved geometry pre-dating the lock,
-or any future code path that subtly shifts a position would bypass the cap.
-The hard cap inside match_opt._apply() is that backstop.
+  1. match_opt.optimize() entry rescales the input geometry so REF lands at
+     0 and the last director lands at EXACTLY boom_max_in (no shorter, no
+     longer).
+  2. match_opt._apply() pins REF at 0 and the last director at boom_max_in
+     after every coordinate-descent move, regardless of what the DOF vector
+     says.  Middle elements stay between them with at least 6 inches between
+     adjacent neighbours.
+  3. FREE mode (boom_max_in == 0) leaves the geometry alone -- AI is free to
+     design.
 """
 import copy
 
@@ -27,36 +28,14 @@ BASE_ELEMENTS = [
     {"name": "COUPLER", "position_in": 66.9,   "length_in": 199.9},
     {"name": "DIR1",    "position_in": 135.9,  "length_in": 195.0},
     {"name": "DIR2",    "position_in": 214.1,  "length_in": 191.1},
-    # Intentionally too long: 292.3" = 24.36 ft -- exceeds a 22-ft (264") cap
+    # Too long: 292.3 in = 24.36 ft, while we'll lock to 22 ft = 264 in.
     {"name": "DIR3",    "position_in": 292.3,  "length_in": 187.2},
 ]
 RULES_LOCKED = {
-    "global": {"boom_max_in": 264.0},      # 22 ft cap
+    "global": {"boom_max_in": 264.0},
     "elements": {},
 }
 RULES_FREE = {"global": {}, "elements": {}}
-
-
-def _last_pos(els):
-    return max(float(e["position_in"]) for e in els)
-
-
-def _build_vec(els):
-    """Build a vec that just sets each element to its current length so _apply
-    behaves like a no-op move -- the cap clamp must still fire on the geometry."""
-    vec = {"de_len": _by_name(els, "DE")["length_in"]}
-    for nm in ("REF", "XFRMR", "COUPLER"):
-        e = _by_name(els, nm)
-        if e is not None:
-            tag = {"REF": "ref", "XFRMR": "xf", "COUPLER": "cp"}[nm]
-            vec[f"{tag}_len"] = float(e["length_in"])
-            # gap is signed distance from DE; sign-aware in _apply.
-            de_pos = float(_by_name(els, "DE")["position_in"])
-            vec[f"{tag}_gap"] = abs(float(e["position_in"]) - de_pos)
-    for e in els:
-        if str(e["name"]).upper().startswith("DIR"):
-            vec[f"{e['name']}_len"] = float(e["length_in"])
-    return vec
 
 
 def _by_name(els, nm):
@@ -66,90 +45,156 @@ def _by_name(els, nm):
     return None
 
 
-def test_locked_boom_compresses_overlong_geometry():
-    """Starting with DIR3 at 292.3" (~24.4 ft) and a 264" cap, _apply must
-    compress the directors so the last one lands inside the cap."""
+def _build_vec(els):
+    """Build a no-op DOF vec so _apply just enforces structure, not moves."""
+    vec = {"de_len": _by_name(els, "DE")["length_in"]}
+    for nm in ("REF", "XFRMR", "COUPLER"):
+        e = _by_name(els, nm)
+        if e is not None:
+            tag = {"REF": "ref", "XFRMR": "xf", "COUPLER": "cp"}[nm]
+            vec[f"{tag}_len"] = float(e["length_in"])
+            de_pos = float(_by_name(els, "DE")["position_in"])
+            vec[f"{tag}_gap"] = abs(float(e["position_in"]) - de_pos)
+    for e in els:
+        if str(e["name"]).upper().startswith("DIR"):
+            vec[f"{e['name']}_len"] = float(e["length_in"])
+    return vec
+
+
+# ---- _apply() endpoint pin ------------------------------------------------
+
+def test_apply_pins_ref_at_zero():
+    """REF MUST land at exactly position 0 after _apply when boom is locked.
+    Even if a starting geometry has REF at e.g. +5 from a bad warm-start."""
+    els = copy.deepcopy(BASE_ELEMENTS)
+    _by_name(els, "REF")["position_in"] = 5.2     # nudged off zero
+    vec = _build_vec(els)
+    de_pos = float(_by_name(els, "DE")["position_in"])
+    result = match_opt._apply(els, vec, de_pos, rules=RULES_LOCKED)
+    assert abs(float(_by_name(result, "REF")["position_in"])) < 0.01, (
+        f"REF must be at 0 with locked boom; got "
+        f"{_by_name(result, 'REF')['position_in']}"
+    )
+
+
+def test_apply_pins_last_director_at_cap():
+    """Last director MUST land at exactly boom_max_in after _apply."""
     vec = _build_vec(BASE_ELEMENTS)
     de_pos = float(_by_name(BASE_ELEMENTS, "DE")["position_in"])
     result = match_opt._apply(BASE_ELEMENTS, vec, de_pos, rules=RULES_LOCKED)
-    span = _last_pos(result) - min(float(e["position_in"]) for e in result)
-    assert span <= 264.5, (
-        f"_apply must clamp boom span to the cap; got span {span} > 264"
+    # The last director by sorted position should be exactly 264.0
+    last = max(result, key=lambda e: float(e["position_in"]))
+    assert last["name"].upper().startswith("DIR")
+    assert abs(float(last["position_in"]) - 264.0) < 0.01, (
+        f"last DIR must be at exactly cap (264.0), got {last['position_in']}"
     )
 
+
+def test_apply_keeps_middle_elements_in_order():
+    """Middle elements must stay in their boom order, with at least the 6\"
+    minimum spacing between neighbours (we don't want elements collapsing
+    onto each other when the DOF moves get aggressive)."""
+    els = copy.deepcopy(BASE_ELEMENTS)
+    # Force XFRMR way past DE to test the order-fix.
+    _by_name(els, "XFRMR")["position_in"] = 999.0
+    vec = _build_vec(els)
+    de_pos = float(_by_name(els, "DE")["position_in"])
+    result = match_opt._apply(els, vec, de_pos, rules=RULES_LOCKED)
+    positions = [float(e["position_in"]) for e in
+                 sorted(result, key=lambda e: float(e["position_in"]))]
+    # Each adjacent gap should be >= 6 in (or close to it after rounding).
+    gaps = [positions[i + 1] - positions[i] for i in range(len(positions) - 1)]
+    assert all(g >= 5.9 for g in gaps), (
+        f"adjacent elements must keep min 6 in spacing; gaps={gaps}"
+    )
+
+
+# ---- FREE mode (no constraints) -------------------------------------------
 
 def test_free_boom_leaves_geometry_alone():
-    """With no boom_max_in in rules, the cap is OFF and a long boom is
-    preserved -- AI is free to design (per user's rule)."""
-    vec = _build_vec(BASE_ELEMENTS)
-    de_pos = float(_by_name(BASE_ELEMENTS, "DE")["position_in"])
-    result = match_opt._apply(BASE_ELEMENTS, vec, de_pos, rules=RULES_FREE)
-    assert _last_pos(result) > 290.0, (
-        f"FREE mode must not compress positions; got DIR3 at {_last_pos(result)}"
+    """With no boom_max_in in rules, _apply doesn't touch positions."""
+    els = copy.deepcopy(BASE_ELEMENTS)
+    vec = _build_vec(els)
+    de_pos = float(_by_name(els, "DE")["position_in"])
+    last_before = max(float(e["position_in"]) for e in els)
+    result = match_opt._apply(els, vec, de_pos, rules=RULES_FREE)
+    last_after = max(float(e["position_in"]) for e in result)
+    assert abs(last_after - last_before) < 0.5, (
+        "FREE mode (boom_max_in=0) must not touch positions; "
+        f"was {last_before}, became {last_after}"
     )
 
 
-def test_locked_boom_no_op_when_under_cap():
-    """If geometry already fits under the cap, _apply must NOT shrink it -- so
-    a well-built antenna doesn't get inappropriately compressed every tune."""
-    short = copy.deepcopy(BASE_ELEMENTS)
-    _by_name(short, "DIR3")["position_in"] = 200.0   # well under 264" cap
-    vec = _build_vec(short)
-    de_pos = float(_by_name(short, "DE")["position_in"])
-    before = _last_pos(short)
-    result = match_opt._apply(short, vec, de_pos, rules=RULES_LOCKED)
-    assert abs(_last_pos(result) - before) < 0.5, (
-        f"in-spec geometry must not be touched by the cap; was {before}, "
-        f"became {_last_pos(result)}"
-    )
+# ---- optimize() entry rescale --------------------------------------------
 
+def test_optimize_entry_rescales_overlong_to_exact_cap():
+    """optimize() entry must rescale a too-long starting geometry so REF=0
+    and last director = boom_max_in EXACTLY (not just <= cap)."""
+    captured = []
 
-def test_optimize_entry_compresses_overlong_geometry():
-    """The match_opt.optimize() entry path must compress a too-long starting
-    geometry to the cap BEFORE the descent runs -- even if tune_spacings=False
-    (which keeps positions out of the DOF vector entirely).  This was the bug:
-    LOCKED 22' reported on the Report header, but the cut sheet showed DIR3 at
-    24' 4-5/16\" because positions never moved in FIXED mode.
-
-    We don't actually run the matcher (no nec2c in test env); we just verify
-    the entry-time compression fires and the in-place geometry is short
-    enough by intercepting after the first log line."""
-    captured_log = []
-
-    def grab_log(msg):
-        captured_log.append(msg)
-        # Raise immediately after the compress fires to skip the heavy descent.
-        if "[boom-cap]" in msg:
+    def grab(msg):
+        captured.append(msg)
+        if "[boom-lock]" in msg:
             raise RuntimeError("INTERCEPT")
 
     rules = {
         "global": {
             "freq_mhz_low": 26.6, "freq_mhz_high": 27.8,
-            "freq_mhz_center": 27.195, "boom_max_in": 264.0,   # 22 ft cap
-        },
-        "elements": {},
+            "freq_mhz_center": 27.195, "boom_max_in": 264.0,    # 22 ft cap
+        }, "elements": {},
     }
-    els = copy.deepcopy(BASE_ELEMENTS)        # DIR3 at 292.3 = ~24.4 ft
     try:
-        match_opt.optimize(
-            els, rules,
-            height_ft=22.0, target_swr=1.5, points=5, restarts=0,
-            polish_gain=False, log_fn=grab_log, goal="wideband",
-            tune_spacings=False,
-        )
+        match_opt.optimize(copy.deepcopy(BASE_ELEMENTS), rules,
+                           height_ft=22.0, target_swr=1.5, points=5,
+                           restarts=0, polish_gain=False, log_fn=grab,
+                           goal="wideband", tune_spacings=True)
     except (RuntimeError, Exception):
         pass
-
-    # Must have logged the compression step.
-    cap_log = [m for m in captured_log if "[boom-cap]" in m]
+    cap_log = [m for m in captured if "[boom-lock]" in m]
     assert cap_log, (
-        f"optimize() entry must log [boom-cap] when starting geometry > cap; "
-        f"log was {captured_log[:3]}"
+        f"optimize() must log [boom-lock] when rescaling input geometry; "
+        f"first log msgs: {captured[:3]}"
     )
-    # Inspect the message: it must say the input span was > cap and was
-    # compressed by a scale factor < 1.
     msg = cap_log[0]
-    assert ">" in msg and "compressed positions by" in msg, (
-        f"[boom-cap] log line should report span > cap and compression factor; "
-        f"got {msg}"
+    assert "264.00" in msg and "REF at 0" in msg, (
+        f"[boom-lock] message must name the cap value and REF pin; got {msg}"
+    )
+
+
+def test_optimize_entry_stretches_undersized_geometry():
+    """If the starting geometry is SHORTER than the locked cap, the entry
+    rescale must STRETCH it so the last director reaches the cap exactly."""
+    captured = []
+
+    def grab(msg):
+        captured.append(msg)
+        if "[boom-lock]" in msg:
+            raise RuntimeError("INTERCEPT")
+
+    # 18-ft array, but we'll lock to 22 ft -> needs stretching.
+    short = [
+        {"name": "REF",     "position_in": 0.0,    "length_in": 218.5},
+        {"name": "XFRMR",   "position_in": 28.4,   "length_in": 199.3},
+        {"name": "DE",      "position_in": 46.9,   "length_in": 215.7},
+        {"name": "COUPLER", "position_in": 66.9,   "length_in": 199.9},
+        {"name": "DIR1",    "position_in": 100.0,  "length_in": 195.0},
+        {"name": "DIR2",    "position_in": 160.0,  "length_in": 191.1},
+        {"name": "DIR3",    "position_in": 215.0,  "length_in": 187.2},  # < 264
+    ]
+    rules = {
+        "global": {
+            "freq_mhz_low": 26.6, "freq_mhz_high": 27.8,
+            "freq_mhz_center": 27.195, "boom_max_in": 264.0,
+        }, "elements": {},
+    }
+    try:
+        match_opt.optimize(short, rules,
+                           height_ft=22.0, target_swr=1.5, points=5,
+                           restarts=0, polish_gain=False, log_fn=grab,
+                           goal="wideband", tune_spacings=True)
+    except (RuntimeError, Exception):
+        pass
+    assert [m for m in captured if "[boom-lock]" in m], (
+        "must also rescale when geometry is SHORTER than the cap "
+        "(stretch up to exact length)"
     )

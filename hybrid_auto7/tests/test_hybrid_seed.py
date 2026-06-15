@@ -30,23 +30,26 @@ def test_clamps_n_above_18():
 
 
 def test_boom_lock_compresses_last_director_to_fit():
-    """With max_boom_in supplied, the last DIRn must sit within the cap (with
-    a 1\" tip margin).  Tested on a long array where unlocked the boom would
-    overrun the limit by ~6 ft."""
+    """With max_boom_in supplied, the last DIRn must sit EXACTLY at the cap
+    (REF stays at 0).  New spec: boom is an exact length, not just a cap."""
     geo = hybrid_seed.build_geometry(7, max_boom_in=22 * 12.0)  # 22 ft = 264"
-    assert _last_pos(geo) <= 264.0 + 0.5      # within the cap (rounding slack)
-    # Make sure DE/REF/XFRMR/COUPLER aren't moved by the compress -- they sit
-    # at their normal positions; only DIRn spacings shrink.
-    de = next(e for e in geo["elements"] if e["name"] == "DE")
-    assert 40.0 < float(de["position_in"]) < 55.0
+    assert abs(_last_pos(geo) - 264.0) < 0.5, (
+        f"last DIR must land EXACTLY at the cap, got {_last_pos(geo)}"
+    )
+    # REF must stay at exactly 0.
+    ref = next(e for e in geo["elements"] if e["name"] == "REF")
+    assert abs(float(ref["position_in"])) < 0.01
 
 
-def test_boom_lock_does_not_inflate_when_already_short():
-    """If the boom is already shorter than the cap, the seeder must leave the
-    spacings alone (don't artificially stretch to fill)."""
-    geo_uncapped = hybrid_seed.build_geometry(3)
-    geo_capped = hybrid_seed.build_geometry(3, max_boom_in=60.0 * 12.0)  # huge
-    assert _last_pos(geo_uncapped) == _last_pos(geo_capped)
+def test_boom_lock_grows_short_geometry_to_exact_length():
+    """If the seeder's natural directors land SHORTER than the cap, the
+    geometry is STRETCHED so the last director sits exactly at the cap.
+    Boom is an exact length, not a cap."""
+    # 1 director at 27.195 MHz with a generous 30 ft cap -> needs stretching.
+    geo = hybrid_seed.build_geometry(1, max_boom_in=30 * 12.0)
+    assert abs(_last_pos(geo) - 360.0) < 0.5, (
+        f"last DIR must be at exactly 360 in (30 ft) cap, got {_last_pos(geo)}"
+    )
 
 
 def test_director_lengths_unaffected_by_boom_lock():

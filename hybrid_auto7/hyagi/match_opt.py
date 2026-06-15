@@ -245,15 +245,47 @@ def _apply(elements, vec, de_pos, rules=None):
         if key.endswith("_len") and key[:-4].upper().startswith("DIR"):
             _el(e, key[:-4])["length_in"] = val
     _apply_spacings(e, vec)
+    # ---- Endpoint pin (locked-boom mode) -----------------------------------
+    # When the user has FIXED the boom to an exact length:
+    #   * REF stays at position 0
+    #   * Last director stays at exactly boom_max_in
+    #   * Middle elements (XFRMR, DE, COUPLER, DIR1..DIR(N-1)) are free
+    # to slide between them.  This block enforces those endpoint pins and a
+    # minimum 6" spacing between adjacent elements so a runaway DOF can't
+    # collapse elements on top of each other.
+    cap_in = float((rules or {}).get("global", {}).get("boom_max_in") or 0.0)
+    if cap_in > 0.0:
+        # Hard-pin REF at 0.
+        ref = _el(e, "REF")
+        if ref is not None:
+            ref["position_in"] = 0.0
+        # Hard-pin the last director at the cap.
+        dirs = sorted([x for x in e if str(x["name"]).upper().startswith("DIR")],
+                      key=lambda x: float(x["position_in"]))
+        if dirs:
+            dirs[-1]["position_in"] = round(cap_in, 4)
+        # Clamp every other element to [REF+min_sp, last_dir-min_sp] and keep
+        # them strictly ordered by their current position, with at least
+        # MIN_SP between neighbours.  Sliding is fine but order/coupling
+        # sanity must hold.
+        MIN_SP = 6.0
+        movable = sorted(
+            [x for x in e if str(x["name"]).upper() not in ("REF",)
+             and not (dirs and x is dirs[-1])],
+            key=lambda x: float(x["position_in"]),
+        )
+        prev = 0.0
+        for k, m in enumerate(movable):
+            remaining_slots = len(movable) - k        # how many still ahead
+            hi = cap_in - remaining_slots * MIN_SP
+            new_pos = max(prev + MIN_SP, min(hi, float(m["position_in"])))
+            m["position_in"] = round(new_pos, 4)
+            prev = new_pos
     # ---- Hard boom-length cap (defense in depth) ---------------------------
     # If the user locked the boom on Antenna Setup, rules.global.boom_max_in
     # carries the cap.  Coordinate descent should already keep positions
-    # fixed (tune_spacings=False) so this rarely triggers, but a too-long
-    # warm-start geometry, a director-len move that subtly shifts a position
-    # via _apply_spacings, or a future code path that flips tune_spacings on
-    # by mistake should NEVER be able to push the boom past the cap.  Compress
-    # the directors proportionally if they overshoot.
-    cap_in = float((rules or {}).get("global", {}).get("boom_max_in") or 0.0)
+    # bounded by the endpoint pin above; this is a final safety net that
+    # compresses any remaining overrun proportionally.
     if cap_in > 0.0:
         els = sorted(e, key=lambda el: float(el["position_in"]))
         p0 = float(els[0]["position_in"])
@@ -656,26 +688,27 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
 
     # ---- HARD CAP: enforce the user's locked boom length up-front -----------
-    # _apply()'s position clamp only fires when a move CHANGES positions; in
-    # FIXED mode tune_spacings=False so positions never move and the clamp
-    # never sees the geometry.  Result: a too-long starting geometry sails
-    # through unchanged and the cut sheet ends up longer than the lock.
-    # Compress at entry instead so the matcher / report / cut-sheet all
-    # operate on a geometry that already fits the cap.  No-op when FREE.
+    # New spec (user, latest): FIXED + cap means the boom is EXACTLY the cap
+    # length -- REF locked at position 0, last director locked at exactly the
+    # cap, middle elements free to slide.  So whether the starting geometry is
+    # longer OR shorter than the cap, we RESCALE positions uniformly so the
+    # endpoints sit on those two values.  No-op when FREE (cap == 0).
     cap_in = float(glb.get("boom_max_in") or 0.0)
-    if cap_in > 0.0 and elements:
+    lock_endpoints = cap_in > 0.0
+    if lock_endpoints and elements:
         elements = copy.deepcopy(elements)
         els_sorted = sorted(elements, key=lambda e: float(e["position_in"]))
         p0 = float(els_sorted[0]["position_in"])
         span = float(els_sorted[-1]["position_in"]) - p0
-        if span > cap_in + 0.5:
-            scale = cap_in / span
+        if span > 0:
             for el in elements:
-                el["position_in"] = round(p0 + (float(el["position_in"]) - p0) * scale, 4)
-            if log_fn:
-                log_fn(f"  [boom-cap] starting geometry span {span:.2f}\" > "
-                       f"locked cap {cap_in:.2f}\" -- compressed positions by "
-                       f"x{scale:.4f} so the lock is honoured.")
+                # Map [p0, p0+span] -> [0, cap_in] uniformly.
+                el["position_in"] = round(
+                    (float(el["position_in"]) - p0) * cap_in / span, 4)
+            if log_fn and abs(span - cap_in) > 0.5:
+                log_fn(f"  [boom-lock] starting geometry span {span:.2f}\" "
+                       f"-> rescaled to exactly {cap_in:.2f}\" "
+                       f"(REF at 0, last DIR at {cap_in:.2f}\").")
 
     if goal == "hybrid":
         # Stagger-tune the driven cell when the band is wide -- positions the
