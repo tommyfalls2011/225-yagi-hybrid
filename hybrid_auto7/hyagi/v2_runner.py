@@ -36,12 +36,43 @@ _DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
 
 # Antenna construction options (set from the Setup / Tune page before tuning so
 # every solve, sweep, export and the performance report all use the same model).
-#   GROUNDED          -> True: parasitic elements are bonded to a metal boom of
-#                        BOOM_DIAMETER_IN (DE stays insulated/coax-fed); changes
-#                        the tuning vs the default insulated build.
-#   BOOM_DIAMETER_IN  -> boom outer diameter (inches), used when grounded.
+#   GROUNDING         -> tristate string:
+#     'all_insulated'  every element electrically isolated from the boom
+#                      (mounted on insulators); DE is coax-fed.  Default.
+#     'cell_insulated' the DRIVEN CELL (XFRMR, DE, COUPLER) sits on insulators;
+#                      REF and every DIRn is bonded to the boom.  Classic
+#                      high-power hybrid mechanical build.
+#     'all_grounded'   every parasitic element (REF + DIRn) bonded to the boom;
+#                      DE stays coax-fed (insulators only at the feed).
+#   BOOM_DIAMETER_IN  -> boom outer diameter (inches), used wherever an
+#                        element is bonded so the boom is part of the model.
+#   GROUNDED          -> LEGACY bool kept for back-compat with old saved
+#                        configs; True means 'all_grounded', False means
+#                        'all_insulated'.  New callers should set GROUNDING.
+GROUNDING = "all_insulated"
 GROUNDED = False
 BOOM_DIAMETER_IN = 1.5
+
+
+CELL_NAMES = {"XFRMR", "DE", "COUPLER"}
+
+
+def _bond_for(name: str, mode: str) -> bool:
+    """Decide whether THIS element gets bonded (split-feed) to the boom for the
+    NEC2 model, given the current grounding mode.
+
+    'all_insulated'  -> nothing bonded.
+    'cell_insulated' -> bond REF + every DIRn; XFRMR/DE/COUPLER stay floating.
+    'all_grounded'   -> bond everything except DE (which is still coax-fed).
+    """
+    n = (name or "").upper()
+    if mode == "all_insulated":
+        return False
+    if mode == "cell_insulated":
+        return n not in CELL_NAMES                     # only parasitics bond
+    if mode == "all_grounded":
+        return n != "DE"
+    return False                                       # unknown -> safest
 
 
 def get_active_taper(element_name=None):
@@ -200,7 +231,7 @@ def _emit_element(out, tag, p, L, H, taper, split_center=False):
 
 def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
                    pattern=True, taper="auto", conductor_sigma=ALUMINUM_SIGMA,
-                   grounded=None, boom_diameter_in=None):
+                   grounded=None, boom_diameter_in=None, grounding=None):
     """Build a NEC2 input deck for the tapered aluminium hybrid.
 
     taper="auto" -> read the active schedule from data/taper_v2.json.
@@ -209,14 +240,30 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
     conductor_sigma adds an LD type-5 aluminium-loss card (None = lossless).
     pattern=True  -> full hemisphere RP (37x73) so gain / F/B can be read.
     pattern=False -> a cheap single-direction RP (~3x faster) for the SWR loop.
+    grounding -> 'all_insulated' / 'cell_insulated' / 'all_grounded' tristate
+                 (see module docstring).  Falls back to the global GROUNDING
+                 set on Setup, and finally to the legacy GROUNDED bool for
+                 ancient saved configs.
+    grounded  -> LEGACY bool, kept so old callers don't break; True coerces
+                 to 'all_grounded', False coerces to 'all_insulated'.
     """
     if taper == "auto":
         taper = get_active_taper()
         per_element = True               # resolve per-element overrides below
     else:
         per_element = False
-    if grounded is None:
-        grounded = GROUNDED
+    # Resolve the grounding mode through the new tristate.  Legacy bool wins
+    # when the caller explicitly passes it (back-compat).
+    if grounding is None:
+        if grounded is True:
+            mode = "all_grounded"
+        elif grounded is False and grounded is not None:
+            mode = "all_insulated"
+        else:
+            mode = str(GROUNDING) if GROUNDING else (
+                "all_grounded" if GROUNDED else "all_insulated")
+    else:
+        mode = str(grounding)
     if boom_diameter_in is None:
         boom_diameter_in = BOOM_DIAMETER_IN
     H = height_ft * FT
@@ -229,7 +276,7 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
         p = float(el["position_in"]) * INCH
         L = float(el["length_in"]) * INCH
         is_de = el["name"].upper() == "DE"
-        bond = bool(grounded) and not is_de
+        bond = _bond_for(el["name"], mode)
         # Resolve the right taper for THIS element when caller asked "auto".
         # Per-element overrides let directors run thinner tubing than the
         # driven cell without re-running the whole model with a different
@@ -260,9 +307,12 @@ def build_nec_card(elements, freqs_mhz, height_ft=30.0, wire_radius_in=0.25,
         raise ValueError("No DE element")
     # Grounded build: bond each grounded element's centre to a common metal boom
     # (diameter boom_diameter_in) modelled just below the elements, with a short
-    # vertical drop wire per element.  The DE is left insulated/coax-fed.  This
-    # genuinely shifts the tuning vs the default insulated model.
-    if grounded and len(ground_nodes) >= 2:
+    # vertical drop wire per element.  The DE is left insulated/coax-fed.  In
+    # 'cell_insulated' mode only the parasitics are bonded; in 'all_grounded'
+    # mode REF + every DIRn are bonded.  Either way the bond list was
+    # populated above via _bond_for(), so we just emit the boom if there is
+    # one to emit.
+    if mode in ("cell_insulated", "all_grounded") and len(ground_nodes) >= 2:
         boom_r = max(0.003, boom_diameter_in * INCH / 2.0)
         drop = boom_r + 0.03
         zb = H - drop

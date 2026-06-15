@@ -101,15 +101,35 @@ with c2:
     height_ft = st.number_input("Height above ground (ft)",
                                 value=float(setup.get("height_ft", 30.0)),
                                 min_value=5.0, max_value=200.0, step=1.0, key="su_height")
+    # Three-way grounding tristate.  Legacy 'insulated' / 'grounded' values
+    # from older setup.json files are auto-promoted to the new names so an
+    # in-flight install keeps working without forcing a re-save.
+    LEGACY_MAP = {"insulated": "all_insulated", "grounded": "all_grounded"}
+    cur_grnd = setup.get("grounding", "all_insulated")
+    cur_grnd = LEGACY_MAP.get(cur_grnd, cur_grnd)
+    options = ["all_insulated", "cell_insulated", "all_grounded"]
+    try:
+        cur_idx = options.index(cur_grnd)
+    except ValueError:
+        cur_idx = 0
     grounding = st.radio(
-        "Elements", ["insulated", "grounded"],
-        index=0 if setup.get("grounding", "insulated") == "insulated" else 1,
-        format_func=lambda g: ("INSULATED from the boom (DE coax-fed) — standard"
-                               if g == "insulated"
-                               else "GROUNDED to the boom (parasitics bonded; DE stays fed)"),
+        "Elements", options, index=cur_idx,
+        format_func=lambda g: ({
+            "all_insulated":
+                "🔌 ALL INSULATED — every element (REF + XFRMR + DE + COUPLER + DIRn) "
+                "sits on insulators; DE is coax-fed.  Standard hybrid build.",
+            "cell_insulated":
+                "⚡ INSULATED CELL — XFRMR + DE + COUPLER on insulators (the whole "
+                "driven cell floats); REF + every DIRn bonded to the boom.",
+            "all_grounded":
+                "🔩 ALL GROUNDED — every parasitic (REF + every DIRn) bonded to "
+                "the boom; DE stays coax-fed.  Lightning-bonded / high-power build.",
+        }[g]),
         key="su_ground",
-        help="Grounded models a metal boom of the diameter above, bonding each "
-             "parasitic element's centre to it. Changes the tuning vs insulated.")
+        help="Bonded elements are modelled with a short vertical drop wire to a "
+             "metal boom of the diameter above.  Bonding shifts the tuning, the "
+             "centre R, and the F/B vs an insulated build — choose the mode that "
+             "matches the antenna you ACTUALLY built.")
 
 st.markdown("---")
 b1, b2 = st.columns(2)

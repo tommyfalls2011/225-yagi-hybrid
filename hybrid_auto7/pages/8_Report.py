@@ -198,7 +198,12 @@ rules = _load(str(RULES_PATH), {"global": {}})
 setup = _load(str(SETUP_PATH), {})
 glb = rules.get("global", {})
 
-v2_runner.GROUNDED = (str(setup.get("grounding", "insulated")) == "grounded")
+v2_runner.GROUNDED = (str(setup.get("grounding", "all_insulated"))
+                      in ("grounded", "all_grounded", "cell_insulated"))
+v2_runner.GROUNDING = {
+    "insulated": "all_insulated",
+    "grounded": "all_grounded",
+}.get(setup.get("grounding"), str(setup.get("grounding", "all_insulated")))
 v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
 height_ft = float(setup.get("height_ft", 30.0))
 

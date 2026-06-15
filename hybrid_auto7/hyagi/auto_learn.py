@@ -58,8 +58,9 @@ class LearnConfig:
     tune_goal: str = "wideband"       # "wideband" (min worst SWR) or "resonant"
                                       # (R->50, X->0 at centre for high power)
     tune_spacings: bool = False       # "boom free": let the matcher move spacings
-    grounded: bool = False            # parasitics bonded to a metal boom
-    boom_diameter_in: float = 1.5     # boom OD (inches), used when grounded
+    grounded: bool = False            # legacy bool kept for back-compat
+    grounding: str = "all_insulated"  # tristate: all_insulated / cell_insulated / all_grounded
+    boom_diameter_in: float = 1.5     # boom OD (inches), used when bonding fires
 
 
 # ---------------------------------------------------------------------------
@@ -309,8 +310,16 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
     _set_swr_profile(cfg.swr_profile)
 
     # Apply construction options (grounded/boom) so every solve, sweep, export
-    # and report uses the same physical model for this run.
-    v2_runner.GROUNDED = bool(getattr(cfg, "grounded", False))
+    # and report uses the same physical model for this run.  Honour the new
+    # tristate `grounding` when present; fall back to the legacy `grounded`
+    # bool for older callers / saved configs.
+    g_mode = getattr(cfg, "grounding", None)
+    if g_mode:
+        v2_runner.GROUNDING = str(g_mode)
+        v2_runner.GROUNDED = g_mode in ("cell_insulated", "all_grounded", "grounded")
+    else:
+        v2_runner.GROUNDED = bool(getattr(cfg, "grounded", False))
+        v2_runner.GROUNDING = "all_grounded" if v2_runner.GROUNDED else "all_insulated"
     v2_runner.BOOM_DIAMETER_IN = float(getattr(cfg, "boom_diameter_in", 1.5))
 
     # Make the optimizer score across the full band (not just 5 spot freqs) so

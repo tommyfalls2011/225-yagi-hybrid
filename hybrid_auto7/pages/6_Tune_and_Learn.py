@@ -56,7 +56,12 @@ setup = _load_setup()
 
 glb = rules["global"]
 # Apply construction options from Antenna Setup to live exports / previews too.
-v2_runner.GROUNDED = (str(setup.get("grounding", "insulated")) == "grounded")
+v2_runner.GROUNDED = (str(setup.get("grounding", "all_insulated"))
+                      in ("grounded", "all_grounded", "cell_insulated"))
+v2_runner.GROUNDING = {
+    "insulated": "all_insulated",
+    "grounded": "all_grounded",
+}.get(setup.get("grounding"), str(setup.get("grounding", "all_insulated")))
 v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
 
 # Design centre + wideband half-width.  Centre is the user's chosen operating
@@ -391,7 +396,13 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
         # locked.  See pages/1_Antenna_Setup.py for the cap entry.
         tune_spacings=((str(setup.get("boom_mode", "fixed")) == "free")
                        or bool(setup.get("boom_length_in"))),
-        grounded=(str(setup.get("grounding", "insulated")) == "grounded"),
+        grounded=(str(setup.get("grounding", "all_insulated"))
+                  in ("grounded", "all_grounded", "cell_insulated")),
+        grounding={
+            "insulated": "all_insulated",
+            "grounded": "all_grounded",
+        }.get(setup.get("grounding"),
+              str(setup.get("grounding", "all_insulated"))),
         boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
     )
     started = datetime.datetime.now()
