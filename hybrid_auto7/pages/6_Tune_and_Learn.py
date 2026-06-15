@@ -163,8 +163,13 @@ with c1:
 with c2:
     height_ft = st.number_input("Height (ft)", value=float(setup.get("height_ft", 30.0)),
                                 step=1.0, key="al_height")
-    band_points = st.slider("Band sweep points", 9, 41, 21, key="al_points",
-                            help="More points = stricter wideband check (slower)")
+    band_points = st.slider("Band sweep points", 9, 401, 101, step=2,
+                            key="al_points",
+                            help="How many frequency samples to check across the "
+                                 "tuning band -- like the sweep-points knob on a "
+                                 "nanoVNA.  101 is a good default; 201 / 401 give "
+                                 "finer resolution and a longer tune.  More points "
+                                 "= stricter wideband match check.")
     restarts = st.slider("Search restarts (escape local minima)", 0, 4, 1, key="al_restarts")
 
 st.markdown("#### Tuning method")
