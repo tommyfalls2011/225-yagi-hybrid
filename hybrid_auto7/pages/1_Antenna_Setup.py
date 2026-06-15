@@ -54,6 +54,13 @@ n_dirs_now = sum(1 for e in geo.get("elements", [])
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("#### Elements & boom")
+    antenna_name = st.text_input(
+        "Antenna name", value=str(setup.get("antenna_name", "my_antenna")),
+        key="su_aname", max_chars=64,
+        help="Free-form name for THIS build.  Shown on the printable report, "
+             "in the move log, and used as the project key in the learning DB "
+             "so different antennas don't share warm-starts.",
+    )
     n_dir = st.slider("Number of directors", 0, 14,
                       int(setup.get("n_directors", n_dirs_now or 3)),
                       key="su_ndir",
@@ -141,6 +148,7 @@ with b1:
                       if (boom_mode == "fixed" and boom_length_ft) else None)
         _save = {
             "n_directors": int(n_dir),
+            "antenna_name": str(antenna_name or "my_antenna").strip() or "my_antenna",
             "boom_mode": str(boom_mode),
             "boom_length_in": new_cap_in,
             "height_ft": float(height_ft),

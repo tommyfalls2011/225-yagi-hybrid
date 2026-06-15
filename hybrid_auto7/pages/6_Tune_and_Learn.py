@@ -379,7 +379,8 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
         procedure = next((p for p in procs if p["name"] == sel_proc_name),
                          {"name": "procedure", "steps": []})
     cfg = LearnConfig(
-        project_name="current_geometry",
+        project_name=str(setup.get("antenna_name", "current_geometry")).strip()
+                     or "current_geometry",
         height_ft=float(height_ft),
         swr_profile="wideband_1.2",
         target_max_swr=float(target_swr),

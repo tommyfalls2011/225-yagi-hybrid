@@ -138,7 +138,37 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
 
     peak = max(pat, key=lambda t: t[2])
     pk_theta, pk_phi, pk_gain = peak
-    takeoff = 90.0 - pk_theta
+
+    # ---- Sub-degree take-off via parabolic interpolation -------------------
+    # nec2c emits the pattern on a 5-degree theta grid (RP 0 37 73), so a raw
+    # 90 - pk_theta snaps to 0, 5, 10, 15... degrees -- a 1.6 wavelength-high
+    # antenna whose true peak is at 9.0 deg reads as 10.0 deg.  Fit a parabola
+    # through the three brightest samples in the peak's PHI column and return
+    # the vertex's theta.  Sub-degree resolution at zero extra NEC cost.
+    col = sorted([(t, g) for (t, p, g) in pat if abs(p - pk_phi) < 1e-6],
+                 key=lambda x: x[0])
+    refined_theta = pk_theta
+    refined_peak_gain = pk_gain
+    if len(col) >= 3:
+        thetas = [c[0] for c in col]
+        try:
+            idx = thetas.index(pk_theta)
+        except ValueError:
+            idx = min(range(len(col)), key=lambda i: abs(col[i][0] - pk_theta))
+        if 0 < idx < len(col) - 1:
+            t0, g0 = col[idx - 1]
+            t1, g1 = col[idx]
+            t2, g2 = col[idx + 1]
+            denom = (g0 - 2.0 * g1 + g2)
+            if abs(denom) > 1e-9:
+                offset = 0.5 * (g0 - g2) / denom        # fraction of grid step
+                step = (t2 - t0) / 2.0                  # = 5 deg typically
+                refined_theta = t1 + offset * step
+                # Vertex gain via the same parabola -- used to refine the
+                # over-ground 'gain_dbi' so the take-off and gain line up.
+                refined_peak_gain = g1 - 0.25 * (g0 - g2) * offset
+    takeoff = 90.0 - refined_theta
+    over_ground_gain = max(pk_gain, refined_peak_gain)
 
     # F/B and F/R come from the SINGLE textbook formula in hyagi.fb so the
     # Result panel and this Report return identical numbers for the same
@@ -158,10 +188,6 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
 
     fs_imps, fs_pat, _ = _solve(_free_space_card(card))
     fs_gain = max((t[2] for t in fs_pat), default=float("nan")) if fs_pat else float("nan")
-
-    dbd = pk_gain - 2.15
-    lin_iso = 10 ** (pk_gain / 10.0)
-    lin_dipole = 10 ** (dbd / 10.0)
 
     lo = sweep_lo if sweep_lo is not None else min(f_low, fc) - 0.6
     hi = sweep_hi if sweep_hi is not None else max(f_high, fc) + 0.6
@@ -183,6 +209,37 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
     in_band = [c for c in curve if f_low - 1e-6 <= c[0] <= f_high + 1e-6]
     band_max_swr = max((c[3] for c in in_band), default=band_max)
 
+    # Centre R/X/SWR/RL.  These come from the centre-frequency impedance
+    # sample returned by the same NEC solve that produced the pattern, so
+    # they're internally consistent with the rest of the report (no second
+    # solve, no centre drift).  Surfaced into the dict so the report can
+    # show them in the Performance table next to RF gain / F-B.
+    import math as _math
+    if imps:
+        Rc, Xc = float(imps[0][0]), float(imps[0][1])
+    else:
+        Rc, Xc = 50.0, 0.0
+    csw = v2_runner.swr(Rc, Xc)
+    if csw <= 1.0:
+        rl_db = 99.0
+    else:
+        rl_db = -20.0 * _math.log10((csw - 1.0) / (csw + 1.0))
+
+    # Antenna type inferred from the element table -- 'Hybrid Yagi' when the
+    # driven cell (XFRMR + COUPLER) is present, plain 'Yagi-Uda' otherwise.
+    names = {str(e["name"]).upper() for e in elements}
+    if {"XFRMR", "COUPLER"} <= names:
+        antenna_type = "Hybrid Yagi (REF + XFRMR + DE + COUPLER + DIRn)"
+    elif "DE" in names:
+        antenna_type = "Yagi-Uda (REF + DE + DIRn)"
+    else:
+        antenna_type = "Array"
+
+    pk_gain = max(pk_gain, over_ground_gain)        # use parabola-refined peak
+    dbd = pk_gain - 2.15
+    lin_iso = 10 ** (pk_gain / 10.0)
+    lin_dipole = 10 ** (dbd / 10.0)
+
     return {
         "center_mhz": round(fc, 4),
         "band_low_mhz": round(f_low, 4),
@@ -196,7 +253,7 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
         "power_mult_dipole": round(lin_dipole, 2),
         "fb_db": round(fb_db_val, 2),
         "fr_db": round(fr_db_val, 2),
-        "takeoff_deg": round(takeoff, 1),
+        "takeoff_deg": round(takeoff, 2),
         "az_beamwidth_deg": round(az_bw, 1) if az_bw else None,
         "el_beamwidth_deg": round(el_bw, 1) if el_bw else None,
         "efficiency_pct": efficiency,
@@ -208,4 +265,11 @@ def analyze(elements, rules, height_ft=30.0, center_mhz=None,
         "bw_swr_2p0": _swr_bandwidth(curve, 2.0, fmin_swr),
         "boom_in": round(max(float(e["position_in"]) for e in elements)
                          - min(float(e["position_in"]) for e in elements), 2),
+        # Centre impedance suite -- now part of the canonical Report.
+        "center_r": round(Rc, 2),
+        "center_x": round(Xc, 2),
+        "center_swr": round(csw, 3),
+        "return_loss_db": round(rl_db, 2),
+        "antenna_type": antenna_type,
+        "n_elements": len(elements),
     }

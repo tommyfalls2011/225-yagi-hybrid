@@ -251,6 +251,10 @@ if "error" in rep:
 def _bw(b):
     return f"{b[0]:.3f}&ndash;{b[1]:.3f} MHz  ({b[2]:.0f} kHz)" if b else "—"
 
+# Compute boom length up-front so it can appear in the Performance table too.
+els_sorted = sorted(els, key=lambda e: float(e["position_in"]))
+boom_len_in = float(els_sorted[-1]["position_in"]) - float(els_sorted[0]["position_in"])
+
 
 def _esc(s):
     return html.escape(str(s))
@@ -349,6 +353,10 @@ kpi_html = f"""
 
 # Performance table rows.
 perf_rows = [
+    ("Antenna name",      _esc(str(setup.get("antenna_name", "my_antenna")))),
+    ("Antenna type",      _esc(rep.get("antenna_type", "Hybrid Yagi"))),
+    ("Element count",     f"{rep.get('n_elements', len(els))}"),
+    ("Report generated",  _esc(generated)),
     ("Gain over real ground", f"{rep['gain_dbi']:.2f} dBi  ({rep['gain_dbd']:.2f} dBd)"),
     ("Gain in free space", f"{rep['gain_free_space_dbi']:.2f} dBi"),
     ("Ground-reflection gain", f"+{rep['ground_gain_db']:.2f} dB"),
@@ -360,7 +368,8 @@ perf_rows = [
      f"{rep['az_beamwidth_deg']}°" if rep['az_beamwidth_deg'] else "—"),
     ("Elevation beamwidth (−3 dB)",
      f"{rep['el_beamwidth_deg']}°" if rep['el_beamwidth_deg'] else "—"),
-    ("Take-off (peak elevation) angle", f"{rep['takeoff_deg']:.1f}°"),
+    ("Take-off (peak elevation) angle",
+     f"{rep['takeoff_deg']:.2f}°"),     # parabolic-interp -> sub-degree
     ("Radiation efficiency",
      f"{rep['efficiency_pct']:.1f}%" if rep['efficiency_pct'] is not None else "—"),
     ("Antenna height / boom length",
@@ -368,6 +377,13 @@ perf_rows = [
      (f"{fmt_in(float(setup['boom_length_in']))} (LOCKED)"
       if (setup.get('boom_mode') == 'fixed' and setup.get('boom_length_in'))
       else f"{fmt_in(rep['boom_in'])} (free)")),
+    ("Total boom length (REF → last director)", _esc(fmt_in(boom_len_in))),
+    ("Centre frequency", f"{rep['center_mhz']:.3f} MHz"),
+    ("Centre R / X / SWR",
+     f"{rep['center_r']:.2f} Ω  /  {rep['center_x']:+.2f} Ω  /  {rep['center_swr']:.3f}:1"),
+    ("Return loss at centre",
+     f"{rep['return_loss_db']:.1f} dB" if rep['return_loss_db'] < 99
+     else "≥ 60 dB (effectively a perfect null)"),
     ("Resonant (min-SWR) freq",
      f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
     ("In-band max SWR",
@@ -387,7 +403,6 @@ perf_table = (
 # right schedule for each element (REF / XFRMR / DE / COUPLER / DIRn) so the
 # cut sheet matches exactly what the optimizer modelled.
 INCH = v2_runner.INCH
-els_sorted = sorted(els, key=lambda e: float(e["position_in"]))
 p0 = float(els_sorted[0]["position_in"])
 cut_rows = []
 for i, e in enumerate(els_sorted):
@@ -425,7 +440,6 @@ cut_table = (
     )
     + '</tbody></table>'
 )
-boom_len_in = float(els_sorted[-1]["position_in"]) - float(els_sorted[0]["position_in"])
 
 # Best-logged-run pill (if any).
 best_db = ""
@@ -448,7 +462,10 @@ try:
 except Exception:
     pass
 
-generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+antenna_name = str(setup.get("antenna_name", "my_antenna")).strip() or "my_antenna"
+antenna_type = rep.get("antenna_type", "Hybrid Yagi")
+n_elements = rep.get("n_elements", len(els))
 # Locked-boom pill: surfaces the hard cap explicitly so the printed cut-sheet
 # matches the build constraint, not just whatever span the geometry happens to
 # have.  When FREE we still report the actual span so the user knows what the
@@ -459,17 +476,29 @@ _boom_pill_html = (
     f'<span class="pill">boom FREE — span {fmt_in(rep["boom_in"])}</span>'
 )
 
+# Map saved grounding token -> human label for the header pill.
+_grnd_label = {
+    "all_insulated": "ALL INSULATED",
+    "cell_insulated": "INSULATED CELL",
+    "all_grounded": "ALL GROUNDED",
+    "insulated": "ALL INSULATED",        # legacy
+    "grounded": "ALL GROUNDED",          # legacy
+}.get(str(setup.get("grounding", "all_insulated")),
+      str(setup.get("grounding", "all_insulated")).upper())
+
 report_body = f"""
 <div class="ant-report" id="ant-report">
   <header class="hero">
-    <h1>Hybrid Yagi Report — {len(els)} elements</h1>
+    <h1>{_esc(antenna_name)} — {_esc(antenna_type)}</h1>
     <div class="meta">
+      <span class="pill">{n_elements} elements</span>
       <span class="pill">{rep['height_ft']:.0f} ft AGL</span>
       {_boom_pill_html}
       <span class="pill">boom Ø {float(setup.get('boom_diameter_in', 1.5)):.2f}"</span>
-      <span class="pill">{str(setup.get('grounding', 'insulated')).upper()}</span>
+      <span class="pill">{_grnd_label}</span>
       <span class="pill">taper {v2_runner.taper_signature()}</span>
       <span class="pill">{rep['band_low_mhz']:.3f}–{rep['band_high_mhz']:.3f} MHz</span>
+      <span class="pill">centre {rep['center_mhz']:.3f} MHz</span>
       <span class="pill">generated {generated}</span>
     </div>
   </header>
