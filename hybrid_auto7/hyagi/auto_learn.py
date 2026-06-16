@@ -123,10 +123,19 @@ def _len(elements, name):
     return float(e["length_in"]) if e else 0.0
 
 
-def save_generation(con, cfg, gen, stage, elements, metrics, curve, f_step):
-    """Persist one generation to auto7_history.db (runs + elements + freq_results)."""
+def save_generation(con, cfg, gen, stage, elements, metrics, curve, f_step, *,
+                    sig=None):
+    """Persist one generation to auto7_history.db (runs + elements + freq_results).
+
+    Embeds the design signature (taper|band|height|n_elements) into the
+    design_key so the next warm-start can filter on it -- the previous
+    'project_name|g<gen>|<ts>' format gave the warm-start nothing to match
+    on, leading to CB-band geometries being loaded into OWA-band tunes
+    and baseline SWR readings of 100+.  See warm_start_geometry()."""
     cur = con.cursor()
-    design_key = f"{cfg.project_name}|g{gen}|{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    sig_part = (sig or "nosig").replace("|", "_")
+    design_key = (f"{cfg.project_name}|{sig_part}|g{gen}|"
+                  f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}")
 
     de_pos = _pos(elements, "DE")
     xfrmr_pos = _pos(elements, "XFRMR")
@@ -271,32 +280,87 @@ class MoveMemory:
 # ---------------------------------------------------------------------------
 # Warm start from the best matching past run in the DB
 # ---------------------------------------------------------------------------
-def warm_start_geometry(con, cfg, fallback_elements):
-    """If the DB holds a good prior run for this project signature, start from
-    its geometry instead of the generic one.
+def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
+                        height_ft=None, log_fn=None):
+    """If the DB holds a good prior run for this exact design, start from its
+    geometry instead of the generic seed.
 
-    CRITICAL: only warm-start from a past run with the SAME element set (same
-    count AND names) as the current geometry. Otherwise a different design saved
-    under the same project name (e.g. an old 8-element run) would be resurrected
-    and tuned in place of the antenna the user actually set up."""
+    Two filters are applied -- both critical, because a previous fix for
+    'wrong element count' fixed only one of two leaks:
+
+      1. SAME element set (count + names).  A 7-el geometry can't warm-start
+         a 4-el design.
+
+      2. SAME design signature (taper | band | height | n_elements) when one
+         is supplied.  A run tuned for CB (~27 MHz, +/-0.5 MHz) used to be
+         pulled when the user later asked for a 24-30 MHz OWA band, even
+         though the directors are tuned 1+ MHz off the new band and the
+         baseline SWR comes back at 100+.  Filtering on the signature scope
+         (which lives in design_key as 'project|sig|gen|ts') stops that.
+
+    Plus a SANITY CHECK: if the candidate's baseline SWR over the user's
+    CURRENT band is absurd (> 5:1), reject it and try the next candidate
+    -- nothing is worse than a 'warm-start' that's actually colder than
+    the fresh seed."""
     cur = con.cursor()
     want_names = sorted(str(e["name"]).upper() for e in fallback_elements)
     n_want = len(fallback_elements)
-    cur.execute("""
-        SELECT r.id FROM runs r
-        WHERE r.status='DONE' AND r.design_key LIKE ?
-          AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
-        ORDER BY r.max_swr ASC, r.avg_swr ASC
-    """, (f"{cfg.project_name}|%", n_want))
-    for row in cur.fetchall():
-        run_id = row["id"]
+    pattern = f"{cfg.project_name}|%"
+    # When we have a design signature, prefer rows whose design_key contains
+    # it -- they were stored by THIS exact band/taper/height/n combo.  Fall
+    # back to the broader project-name match if no signature hit exists.
+    candidate_ids = []
+    if sig:
+        cur.execute("""
+            SELECT r.id FROM runs r
+            WHERE r.status='DONE' AND r.design_key LIKE ?
+              AND r.design_key LIKE ?
+              AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+            ORDER BY r.max_swr ASC, r.avg_swr ASC
+        """, (pattern, f"%|{sig}|%", n_want))
+        candidate_ids = [r["id"] for r in cur.fetchall()]
+    if not candidate_ids:
+        cur.execute("""
+            SELECT r.id FROM runs r
+            WHERE r.status='DONE' AND r.design_key LIKE ?
+              AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+            ORDER BY r.max_swr ASC, r.avg_swr ASC
+        """, (pattern, n_want))
+        candidate_ids = [r["id"] for r in cur.fetchall()]
+
+    # Resolve sanity threshold: a fresh seed at the wrong band typically has
+    # SWR < 5 at worst; > 5 means the warm-start geometry's resonance is
+    # somewhere else entirely and we'd start the descent at a baseline an
+    # order of magnitude worse than just using the user's current geometry.
+    sanity_swr = 5.0
+    glb = cfg_band                              # (f_low, f_high) of THIS run
+    h_ft = float(height_ft) if height_ft is not None else float(getattr(cfg, "height_ft", 30.0))
+
+    for run_id in candidate_ids:
         ecur = con.cursor()
         ecur.execute("SELECT name, position_in, length_in FROM elements "
                      "WHERE run_id=? ORDER BY position_in", (run_id,))
         els = [{"name": r["name"], "position_in": r["position_in"],
                 "length_in": r["length_in"]} for r in ecur.fetchall()]
-        if els and sorted(str(e["name"]).upper() for e in els) == want_names:
-            return els, run_id
+        if not els:
+            continue
+        if sorted(str(e["name"]).upper() for e in els) != want_names:
+            continue
+        # Sanity probe across THIS run's current band, not the stored one.
+        try:
+            _curve, mx, _av = v2_runner.band_swr_curve(
+                els, glb[0], glb[1], min(11, max(5, cfg.band_sweep_points // 4)),
+                h_ft)
+        except Exception:
+            mx = 99.0
+        if mx > sanity_swr:
+            if log_fn:
+                log_fn(f"[warm-start] skipping run #{run_id}: "
+                       f"baseline SWR {mx:.2f} > {sanity_swr:.0f} in current band "
+                       f"({glb[0]:.3f}-{glb[1]:.3f} MHz) -- geometry is tuned for "
+                       f"a different design.")
+            continue
+        return els, run_id
     return fallback_elements, None
 
 
@@ -335,9 +399,14 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
     con = connect() if cfg.db_path is None else _connect_path(cfg.db_path)
 
     try:
-        # Warm start
+        # Warm start -- match by design signature first so a CB-band geometry
+        # can't be loaded into an OWA-band tune.
         original = copy.deepcopy(elements)
-        elements, warm_id = warm_start_geometry(con, cfg, elements)
+        sig = _design_signature(elements, cfg, f_low, f_high)
+        elements, warm_id = warm_start_geometry(
+            con, cfg, elements, sig=sig,
+            height_ft=cfg.height_ft, log_fn=log_fn,
+        )
         if (warm_id is not None
                 and str(getattr(cfg, "tune_goal", "")) == "hybrid"):
             # The hybrid needs to begin from full-length (beam) directors. The
@@ -371,7 +440,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
         best_score = base_score
         best_geo = copy.deepcopy(current)
         best_metrics = dict(base, band_max_swr=band_max)
-        save_generation(con, cfg, 0, "baseline", current, base, curve, f_step)
+        save_generation(con, cfg, 0, "baseline", current, base, curve, f_step, sig=sig)
         log_fn(f"[gen 0] baseline  score={base_score:+.1f}  band_max_swr={band_max:.3f}  "
                f"gain={base.get('gain_dbi',0):.2f}  fb={base.get('fb_db',0):.2f}")
 
@@ -428,7 +497,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                 return _result(best_geo, best_metrics, best_score, 0)
             metrics = dict(metrics, band_max_swr=band_max)
             score = v2_scorer.score(**metrics)
-            save_generation(con, cfg, 1, "wideband_match", new_geo, metrics, curve, f_step)
+            save_generation(con, cfg, 1, "wideband_match", new_geo, metrics, curve, f_step, sig=sig)
             log_fn(f"\n[matcher] done  band_max_swr={band_max:.3f}  "
                    f"gain={metrics.get('gain_dbi',0):.2f}  fb={metrics.get('fb_db',0):.2f}  "
                    f"score={score:+.1f}")
@@ -462,7 +531,7 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
 
             curve, band_max = sweep_band(new_geo, f_low, f_high, cfg.band_sweep_points, cfg.height_ft)
             metrics = dict(metrics, band_max_swr=band_max)
-            save_generation(con, cfg, gen, procedure["name"], new_geo, metrics, curve, f_step)
+            save_generation(con, cfg, gen, procedure["name"], new_geo, metrics, curve, f_step, sig=sig)
 
             # Adoption rule tuned for a WIDEBAND low-SWR target:
             #   - while we are still above the SWR target, prefer whatever
