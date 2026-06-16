@@ -251,6 +251,12 @@ if "error" in rep:
 def _bw(b):
     return f"{b[0]:.3f}&ndash;{b[1]:.3f} MHz  ({b[2]:.0f} kHz)" if b else "—"
 
+# Generated-at timestamp -- defined up-front so it can appear in the Performance
+# table AND the header pills (both rendered below).  Previously the variable
+# was defined later, after the perf_rows block referenced it; on first render
+# the page crashed with NameError: name 'generated' is not defined.
+generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 # Compute boom length up-front so it can appear in the Performance table too.
 els_sorted = sorted(els, key=lambda e: float(e["position_in"]))
 boom_len_in = float(els_sorted[-1]["position_in"]) - float(els_sorted[0]["position_in"])
@@ -462,7 +468,6 @@ try:
 except Exception:
     pass
 
-generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 antenna_name = str(setup.get("antenna_name", "my_antenna")).strip() or "my_antenna"
 antenna_type = rep.get("antenna_type", "Hybrid Yagi")
 n_elements = rep.get("n_elements", len(els))

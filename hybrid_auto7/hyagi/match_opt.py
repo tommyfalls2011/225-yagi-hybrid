@@ -787,11 +787,20 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
 
     best_elements = _apply(elements, best_vec, de_pos, rules)
 
-    # Recover gain/F-B if we are comfortably under the SWR target (wideband goal).
-    # In resonant mode we do NOT polish, to avoid disturbing the centre match.
-    if polish_gain and goal == "wideband" and best_mx <= target_swr:
+    # Recover gain/F-B (wideband goal) -- ALWAYS run polish_gain after the
+    # descent has settled; the polish step itself rejects moves that violate
+    # the SWR ceiling so it can't make band-max worse, and crucially it
+    # enforces the F/B floor (12 dB by default).  Old code only polished when
+    # best_mx <= target_swr, so a tune that auto-fit to band-max 1.336 with
+    # target 1.20 skipped polish entirely -> F/B 7.84 dB.  Now polish always
+    # runs once the descent has converged.  In resonant mode we still skip
+    # polish to avoid disturbing the centre match.
+    if polish_gain and goal == "wideband":
+        # Use the achieved band-max as the SWR ceiling for polish so it can't
+        # make things worse, even when target_swr wasn't hit.
+        ceiling = max(float(target_swr), float(best_mx))
         best_elements = _polish_gain(best_elements, rules, de_pos, height_ft,
-                                     f_low, f_high, points, target_swr, log_fn)
+                                     f_low, f_high, points, ceiling, log_fn)
 
     # ---- AUTO-FIT BANDWIDTH ------------------------------------------------
     # User instruction: 'it needs to work outwards from my center frequency
@@ -827,10 +836,11 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
                 f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move,
                 fc=fc, goal=goal)
             best_elements = _apply(best_elements, best_vec, de_pos, rules)
-            if polish_gain and best_mx <= target_swr:
+            if polish_gain:
+                ceiling = max(float(target_swr), float(best_mx))
                 best_elements = _polish_gain(
                     best_elements, rules, de_pos, height_ft,
-                    f_low, f_high, points, target_swr, log_fn)
+                    f_low, f_high, points, ceiling, log_fn)
             if log_fn:
                 log_fn(f"  [auto-fit] retry {attempt} -> band_max_swr={best_mx:.3f}")
         if attempt > 0 and log_fn:
