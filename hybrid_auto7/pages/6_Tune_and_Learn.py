@@ -6,6 +6,7 @@ WORST in-band SWR down with the coordinate-descent matcher, recovers gain/F-B,
 and saves every run back to the DB so the next run starts smarter.
 """
 import json
+import math as _math
 import pathlib
 import sys
 import datetime
@@ -365,12 +366,67 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
     else:
         rules_run["global"]["boom_max_in"] = 0.0
 
+    # ---- LIVE TUNING STATUS PANEL --------------------------------------
+    # User explicitly asked: 'you need to see the swr, x, and rl at all time
+    # during tuning so you know where to go'.  Pre-create placeholders the
+    # on_move callback below fills in -- the panel updates ~3x/sec while the
+    # matcher is running so the user can watch the tune happen instead of
+    # waiting for a single final number.
+    st.markdown("### 📡 Live tuning status")
+    live_cols = st.columns(7)
+    ph_move = live_cols[0].empty()
+    ph_csw  = live_cols[1].empty()
+    ph_r    = live_cols[2].empty()
+    ph_x    = live_cols[3].empty()
+    ph_rl   = live_cols[4].empty()
+    ph_mx   = live_cols[5].empty()
+    ph_best = live_cols[6].empty()
+    ph_dof  = st.empty()
+    # Initial render so the user sees the panel before the first move lands.
+    ph_move.metric("Move #",            "0")
+    ph_csw.metric ("Centre SWR",        "—")
+    ph_r.metric   ("Centre R (Ω)",      "—")
+    ph_x.metric   ("Centre X (Ω)",      "—")
+    ph_rl.metric  ("Return loss (dB)",  "—")
+    ph_mx.metric  ("Band-max SWR",      "—")
+    ph_best.metric("Best band-max so far", "—")
+    ph_dof.caption("Waiting for the first matcher move…")
+
     log_box = st.empty()
     log_lines = []
 
     def log(msg):
         log_lines.append(str(msg))
         log_box.code("\n".join(log_lines[-60:]), language="text")
+
+    # Live-status callback.  Throttled to every 5 moves to keep the page
+    # responsive on a 401-point sweep that's 10x slower than a 41-point one.
+    live_state = {"n": 0, "best": float("inf")}
+
+    def on_move_live(m):
+        live_state["n"] += 1
+        mx = float(m.get("band_max_swr", 0))
+        if mx < live_state["best"]:
+            live_state["best"] = mx
+        if live_state["n"] % 5 != 0:
+            return                                # throttle UI updates
+        csw = float(m.get("center_swr", 0))
+        cr  = float(m.get("center_r", 0))
+        cx  = float(m.get("center_x", 0))
+        rl  = (99.0 if csw <= 1.0 else
+               -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+        ph_move.metric("Move #",            f"{live_state['n']:,}")
+        ph_csw .metric("Centre SWR",        f"{csw:.3f}:1")
+        ph_r   .metric("Centre R (Ω)",      f"{cr:.2f}")
+        ph_x   .metric("Centre X (Ω)",      f"{cx:+.2f}")
+        ph_rl  .metric("Return loss (dB)",  f"{rl:.1f}")
+        ph_mx  .metric("Band-max SWR",      f"{mx:.3f}")
+        ph_best.metric("Best band-max so far", f"{live_state['best']:.3f}")
+        accepted = bool(m.get("accepted"))
+        dof = str(m.get("dof", "?"))
+        ph_dof.caption(("✅ ACCEPTED " if accepted else "❌ rejected ")
+                       + f"`{dof}` → {float(m['value']):.3f}")
+    # ---- end live panel --------------------------------------------------
 
     use_matcher = (tune_method == "matcher")
     if use_matcher:
@@ -408,7 +464,8 @@ if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="
     )
     started = datetime.datetime.now()
     with st.spinner("Self-learning… (one NEC2 solve per candidate; this can take a few minutes)"):
-        result = run_learning(geo["elements"], rules_run, minis, procedure, cfg, log_fn=log)
+        result = run_learning(geo["elements"], rules_run, minis, procedure, cfg,
+                              log_fn=log, on_move=on_move_live)
     elapsed = (datetime.datetime.now() - started).total_seconds()
 
     m = result["final_metrics"]

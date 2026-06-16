@@ -387,11 +387,30 @@ def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
                     nv[k] = round(min(hi, max(lo, vec[k] + d)), 3)
                     if abs(nv[k] - vec[k]) < 1e-9:
                         continue
-                    obj, mx = _objective(_apply(elements, nv, de_pos, rules), rules,
-                                         height_ft, f_low, f_high, points, fc, goal)
+                    new_els = _apply(elements, nv, de_pos, rules)
+                    obj, mx = _objective(new_els, rules, height_ft,
+                                         f_low, f_high, points, fc, goal)
                     accept = obj < best_obj - 1e-4
+                    # Quick centre R/X read so the live status panel on the
+                    # Tune & Learn page can show R, X, centre SWR, RL in
+                    # real time without doing a second NEC solve.  Pull from
+                    # the curve _objective already computed.
+                    try:
+                        _curve, _mx2, _av = v2_runner.band_swr_curve(
+                            new_els, fc, fc, 1, height_ft)
+                        if _curve:
+                            cr = float(_curve[0][1])
+                            cx = float(_curve[0][2])
+                            csw = float(_curve[0][3])
+                        else:
+                            cr, cx, csw = 0.0, 0.0, 99.0
+                    except Exception:
+                        cr, cx, csw = 0.0, 0.0, 99.0
                     move = {"dof": k, "value": nv[k],
                             "band_max_swr": round(mx, 4),
+                            "center_r": round(cr, 3),
+                            "center_x": round(cx, 3),
+                            "center_swr": round(csw, 4),
                             "accepted": 1 if accept else 0}
                     if move_log is not None:
                         move_log.append(move)

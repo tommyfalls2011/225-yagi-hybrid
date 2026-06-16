@@ -367,7 +367,13 @@ def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
-def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=print):
+def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=print,
+                 on_move=None):
+    """Run an end-to-end self-learning tune.
+
+    Optional `on_move` is invoked for EVERY candidate the matcher considers
+    (accepted or rejected).  Used by the Tune & Learn page to drive a live
+    status panel (centre R/X/SWR/RL/band-max) while the tune runs."""
     global cfg_band
 
     # Lock the scorer to the requested wideband SWR target.
@@ -476,6 +482,12 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                 if saved["n"] % 20 == 0:
                     con.commit()
                     log_fn(f"[learn] saved {saved['n']} moves so far...")
+                # Forward to the page-side callback for live UI updates.
+                if on_move is not None:
+                    try:
+                        on_move(m)
+                    except Exception:
+                        pass
 
             try:
                 new_geo, band_max, curve = match_opt.optimize(
