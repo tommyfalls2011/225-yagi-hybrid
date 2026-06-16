@@ -746,6 +746,10 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
         except Exception as ex:
             if log_fn:
                 log_fn(f"  [resonance-pre-pass] skipped: {ex}")
+    elif log_fn:
+        log_fn(f"  [resonance-pre-pass] centre SWR {centre_swr_pre:.2f} "
+               f"at {fc:.3f} MHz -- already at resonance, skipping DE "
+               f"pre-tune (no action needed).")
 
     # ---- HARD CAP: enforce the user's locked boom length up-front -----------
     # New spec (user, latest): FIXED + cap means the boom is EXACTLY the cap
