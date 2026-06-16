@@ -237,6 +237,154 @@ if els:
 else:
     st.info("No geometry yet — set the element count and hit Build / reseed.")
 
+# ---------- Seed Cell Layout (manual hybrid driven-cell starting point) ----
+# A 7-element hybrid is a coupled system: change the cell, the directors must
+# retune.  Brute-force grid search on cell-only parameters won't find a good
+# answer because the directors stay fixed.  Instead, the user types in their
+# bench-experience cell layout (XFRMR / COUPLER positions and lengths, plus
+# DE / REF lengths if they want), this writes those values into the geometry,
+# and Tune & Learn's matcher then optimises the directors around the seeded
+# cell.  This is how every bench-driven hybrid build actually works: cell
+# first, then walk directors for gain.
+st.markdown("---")
+st.markdown("### 🌱 Seed cell layout · push your bench numbers as the matcher's start")
+st.caption(
+    "Use this to seed the driven cell (REF / XFRMR / DE / COUPLER) at the "
+    "spacings and lengths you've tested on the roof.  Tune & Learn will then "
+    "tune the DIRECTORS around what you set here -- the cell stays close to "
+    "your bench numbers but the directors retune for max gain / F-B / "
+    "bandwidth around the new cell."
+)
+if els:
+    by_name = {str(e["name"]).upper(): e for e in els}
+    de_now = by_name.get("DE")
+    ref_now = by_name.get("REF")
+    xf_now = by_name.get("XFRMR")
+    cp_now = by_name.get("COUPLER")
+    de_pos_in = float(de_now["position_in"]) if de_now else 46.9
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        st.markdown("**REF + DE (longer-than-usual)**")
+        ref_len_seed = st.number_input(
+            "REF length (in)",
+            value=float(ref_now["length_in"]) if ref_now else 220.0,
+            min_value=180.0, max_value=260.0, step=0.25, format="%.2f",
+            key="su_seed_ref_len",
+            help="Reflector length.  Most hybrids run REF a bit longer than "
+                 "the standard 0.503 lambda; longer REF tightens F/B and "
+                 "shifts the low band edge resonance down.",
+        )
+        de_len_seed = st.number_input(
+            "DE length (in)",
+            value=float(de_now["length_in"]) if de_now else 215.5,
+            min_value=180.0, max_value=260.0, step=0.25, format="%.2f",
+            key="su_seed_de_len",
+            help="Driven element length.  This sets the centre frequency.  "
+                 "A slightly longer DE pulls the centre resonance lower.",
+        )
+    with sc2:
+        st.markdown("**Cell helper SPACINGS from DE (your bench numbers)**")
+        xf_gap_seed = st.number_input(
+            "XFRMR gap from DE (in) — closer = tighter cell coupling",
+            value=(de_pos_in - float(xf_now["position_in"])) if xf_now else 6.0,
+            min_value=2.0, max_value=40.0, step=0.25, format="%.2f",
+            key="su_seed_xf_gap",
+            help="Distance from DE to XFRMR.  Hybrid territory: 5-15\".  "
+                 "Closer = stronger cell coupling = wider band but harder "
+                 "to match.",
+        )
+        cp_gap_seed = st.number_input(
+            "COUPLER gap from DE (in) — typically further than XFRMR",
+            value=(float(cp_now["position_in"]) - de_pos_in) if cp_now else 16.0,
+            min_value=2.0, max_value=40.0, step=0.25, format="%.2f",
+            key="su_seed_cp_gap",
+            help="Distance from DE to COUPLER (toward directors).  Hybrid "
+                 "range: 14-32\".  Controls high-side dip depth.",
+        )
+
+    sc3, sc4 = st.columns(2)
+    with sc3:
+        xf_len_seed = st.number_input(
+            "XFRMR length (in)",
+            value=float(xf_now["length_in"]) if xf_now else 222.0,
+            min_value=140.0, max_value=240.0, step=0.25, format="%.2f",
+            key="su_seed_xf_len",
+            help="XFRMR resonant length.  Longer than DE -> low-side dip "
+                 "BELOW fc; shorter -> dip above.  See "
+                 "scripts/hybrid_physics_findings.md for sensitivity numbers.",
+        )
+    with sc4:
+        cp_len_seed = st.number_input(
+            "COUPLER length (in)",
+            value=float(cp_now["length_in"]) if cp_now else 200.0,
+            min_value=140.0, max_value=240.0, step=0.25, format="%.2f",
+            key="su_seed_cp_len",
+            help="COUPLER resonant length.  Shorter than DE -> high-side "
+                 "dip ABOVE fc.  Most sensitive knob in the cell (~99 kHz "
+                 "of dip-frequency shift per inch).",
+        )
+
+    # Live preview of what will change.
+    delta_lines = []
+    if de_now and abs(float(de_now["length_in"]) - de_len_seed) > 0.01:
+        delta_lines.append(f"DE length: "
+                           f"{fmt_in(de_now['length_in'])} -> "
+                           f"{fmt_in(de_len_seed)}")
+    if ref_now and abs(float(ref_now["length_in"]) - ref_len_seed) > 0.01:
+        delta_lines.append(f"REF length: {fmt_in(ref_now['length_in'])} "
+                           f"-> {fmt_in(ref_len_seed)}")
+    if xf_now:
+        cur_gap = de_pos_in - float(xf_now["position_in"])
+        if abs(cur_gap - xf_gap_seed) > 0.01:
+            delta_lines.append(f"XFRMR gap: {fmt_in(cur_gap)} -> "
+                               f"{fmt_in(xf_gap_seed)} from DE")
+        if abs(float(xf_now["length_in"]) - xf_len_seed) > 0.01:
+            delta_lines.append(f"XFRMR length: "
+                               f"{fmt_in(xf_now['length_in'])} -> "
+                               f"{fmt_in(xf_len_seed)}")
+    if cp_now:
+        cur_gap = float(cp_now["position_in"]) - de_pos_in
+        if abs(cur_gap - cp_gap_seed) > 0.01:
+            delta_lines.append(f"COUPLER gap: {fmt_in(cur_gap)} -> "
+                               f"{fmt_in(cp_gap_seed)} from DE")
+        if abs(float(cp_now["length_in"]) - cp_len_seed) > 0.01:
+            delta_lines.append(f"COUPLER length: "
+                               f"{fmt_in(cp_now['length_in'])} -> "
+                               f"{fmt_in(cp_len_seed)}")
+    if delta_lines:
+        st.info("**Pending changes:**\n\n" + "\n\n".join("- " + line for line in delta_lines))
+
+    if st.button("🌱 Apply seed cell layout to current geometry",
+                 type="primary", use_container_width=True, key="su_apply_seed",
+                 help="Writes the values above into REF/XFRMR/DE/COUPLER of "
+                      "current_geometry_v2.json.  Directors are NOT touched -- "
+                      "Tune & Learn's matcher will retune them around the new "
+                      "cell."):
+        new_els = [dict(e) for e in els]
+        for e in new_els:
+            n = str(e["name"]).upper()
+            if n == "REF":
+                e["length_in"] = round(float(ref_len_seed), 3)
+            elif n == "DE":
+                e["length_in"] = round(float(de_len_seed), 3)
+                # DE position stays where it is -- it's the boom anchor.
+            elif n == "XFRMR":
+                e["position_in"] = round(de_pos_in - float(xf_gap_seed), 3)
+                e["length_in"] = round(float(xf_len_seed), 3)
+            elif n == "COUPLER":
+                e["position_in"] = round(de_pos_in + float(cp_gap_seed), 3)
+                e["length_in"] = round(float(cp_len_seed), 3)
+        GEO_PATH.write_text(json.dumps({"elements": new_els}, indent=2))
+        st.cache_data.clear()
+        st.success("Seed cell applied.  REF / XFRMR / DE / COUPLER set to "
+                   "your bench numbers.  Directors left untouched.  Now go "
+                   "to Tune & Learn and run the matcher -- it'll tune the "
+                   "directors around your new cell.")
+        st.rerun()
+else:
+    st.caption("(Build / reseed the geometry first, then come back to set "
+               "your cell layout.)")
+
 # ---------- Migrate hybrid runs from legacy yagi_history.db -----------------
 # The legacy `opt_7el_yagi2.py` optimizer (still used by the Yagi Designer page)
 # writes everything -- pure Yagis AND hybrids -- to ~/scripts/yagi_history.db.
