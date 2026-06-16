@@ -23,6 +23,17 @@ import random
 from . import v2_runner
 
 
+class TuneStopped(Exception):
+    """Raised by an on_move callback to abort the tune early.
+
+    The page-side 'Stop' button sets a threading.Event; the live-status
+    callback raises this exception when it sees the event is set.  Caught
+    at the top of optimize() so the tune returns with the best geometry
+    found at the time of the stop, instead of crashing or silently
+    continuing past the user's wishes.
+    """
+
+
 def _el(elements, name):
     for e in elements:
         if str(e.get("name", "")).upper() == name:

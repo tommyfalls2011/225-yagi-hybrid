@@ -483,9 +483,14 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                     con.commit()
                     log_fn(f"[learn] saved {saved['n']} moves so far...")
                 # Forward to the page-side callback for live UI updates.
+                # TuneStopped is re-raised so it can abort the whole tune;
+                # any other on_move error is swallowed (live-panel rendering
+                # failures must never kill the matcher).
                 if on_move is not None:
                     try:
                         on_move(m)
+                    except match_opt.TuneStopped:
+                        raise
                     except Exception:
                         pass
 
@@ -499,6 +504,22 @@ def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=pri
                     goal=getattr(cfg, "tune_goal", "wideband"),
                     tune_spacings=bool(getattr(cfg, "tune_spacings", False)),
                 )
+            except match_opt.TuneStopped:
+                # User hit Stop.  Return whatever the descent had as best so
+                # far (it was being written into the elements list in-place
+                # via _apply; we eval that and surface it as the result).
+                con.commit()
+                log_fn("[stop] User requested stop. Returning best geometry so far.")
+                metrics = v2_runner.evaluate(current, rules, height_ft=cfg.height_ft)
+                if "error" in metrics:
+                    return _result(best_geo, best_metrics, best_score, 0)
+                score = v2_scorer.score(**metrics)
+                if metrics.get("max_swr", 99) < best_metrics.get("band_max_swr", 99):
+                    best_geo, best_metrics, best_score = (
+                        copy.deepcopy(current),
+                        dict(metrics, band_max_swr=metrics.get("max_swr", 99)),
+                        score)
+                return _result(best_geo, best_metrics, best_score, 1)
             finally:
                 con.commit()
             total = _moves_count(con, sig)

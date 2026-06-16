@@ -10,8 +10,17 @@ import math as _math
 import pathlib
 import sys
 import datetime
+import threading
+import time
 
 import streamlit as st
+
+try:
+    # Lets the background tune thread write to st.session_state without
+    # Streamlit warning about missing ScriptRunContext.
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
+except Exception:
+    add_script_run_ctx = None
 
 st.set_page_config(page_title="Tune & Learn", layout="wide")
 st.title("Tune & Learn  ·  run · log · self-learn")
@@ -347,157 +356,268 @@ st.info(f"**Active tubing taper:** `{v2_runner.taper_signature()}`  — every tu
         f"if it doesn't match your real elements, then re-run.")
 
 st.markdown("---")
-if st.button("RUN TUNE + LEARN", type="primary", use_container_width=True, key="al_run"):
-    if band_high <= band_low:
-        st.error("Band high must be greater than band low.")
-        st.stop()
-    rules_run = json.loads(json.dumps(rules))
-    rules_run["global"]["freq_mhz_low"] = float(band_low)
-    rules_run["global"]["freq_mhz_high"] = float(band_high)
-    # Pin the user-chosen design centre so the stagger seed staggers ABOUT it,
-    # not about the midpoint of the wideband target.  Bandwidth widens around
-    # the centre; the centre never drifts.
-    rules_run["global"]["freq_mhz_center"] = float(fc_input)
-    # Boom HARD CAP -- propagated into rules so the optimizer's _apply() guard
-    # rejects any move pushing the last director past the cap, regardless of
-    # tune_spacings or warm-start state.  Empty / FREE mode -> no cap.
-    if setup.get("boom_mode") == "fixed" and setup.get("boom_length_in"):
-        rules_run["global"]["boom_max_in"] = float(setup["boom_length_in"])
-    else:
-        rules_run["global"]["boom_max_in"] = 0.0
 
-    # ---- LIVE TUNING STATUS PANEL --------------------------------------
-    # User explicitly asked: 'you need to see the swr, x, and rl at all time
-    # during tuning so you know where to go'.  Pre-create placeholders the
-    # on_move callback below fills in -- the panel updates ~3x/sec while the
-    # matcher is running so the user can watch the tune happen instead of
-    # waiting for a single final number.
-    st.markdown("### 📡 Live tuning status")
-    live_cols = st.columns(7)
-    ph_move = live_cols[0].empty()
-    ph_csw  = live_cols[1].empty()
-    ph_r    = live_cols[2].empty()
-    ph_x    = live_cols[3].empty()
-    ph_rl   = live_cols[4].empty()
-    ph_mx   = live_cols[5].empty()
-    ph_best = live_cols[6].empty()
-    ph_dof  = st.empty()
-    # Initial render so the user sees the panel before the first move lands.
-    ph_move.metric("Move #",            "0")
-    ph_csw.metric ("Centre SWR",        "—")
-    ph_r.metric   ("Centre R (Ω)",      "—")
-    ph_x.metric   ("Centre X (Ω)",      "—")
-    ph_rl.metric  ("Return loss (dB)",  "—")
-    ph_mx.metric  ("Band-max SWR",      "—")
-    ph_best.metric("Best band-max so far", "—")
-    ph_dof.caption("Waiting for the first matcher move…")
-
-    log_box = st.empty()
-    log_lines = []
-
-    def log(msg):
-        log_lines.append(str(msg))
-        log_box.code("\n".join(log_lines[-60:]), language="text")
-
-    # Live-status callback.  Throttled to every 5 moves to keep the page
-    # responsive on a 401-point sweep that's 10x slower than a 41-point one.
-    live_state = {"n": 0, "best": float("inf")}
-
-    def on_move_live(m):
-        live_state["n"] += 1
-        mx = float(m.get("band_max_swr", 0))
-        if mx < live_state["best"]:
-            live_state["best"] = mx
-        if live_state["n"] % 5 != 0:
-            return                                # throttle UI updates
-        csw = float(m.get("center_swr", 0))
-        cr  = float(m.get("center_r", 0))
-        cx  = float(m.get("center_x", 0))
-        rl  = (99.0 if csw <= 1.0 else
-               -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
-        ph_move.metric("Move #",            f"{live_state['n']:,}")
-        ph_csw .metric("Centre SWR",        f"{csw:.3f}:1")
-        ph_r   .metric("Centre R (Ω)",      f"{cr:.2f}")
-        ph_x   .metric("Centre X (Ω)",      f"{cx:+.2f}")
-        ph_rl  .metric("Return loss (dB)",  f"{rl:.1f}")
-        ph_mx  .metric("Band-max SWR",      f"{mx:.3f}")
-        ph_best.metric("Best band-max so far", f"{live_state['best']:.3f}")
-        accepted = bool(m.get("accepted"))
-        dof = str(m.get("dof", "?"))
-        ph_dof.caption(("✅ ACCEPTED " if accepted else "❌ rejected ")
-                       + f"`{dof}` → {float(m['value']):.3f}")
-    # ---- end live panel --------------------------------------------------
-
-    use_matcher = (tune_method == "matcher")
-    if use_matcher:
-        procedure = procs[0] if procs else {"name": "matcher", "steps": []}
-    else:
-        procedure = next((p for p in procs if p["name"] == sel_proc_name),
-                         {"name": "procedure", "steps": []})
-    cfg = LearnConfig(
-        project_name=str(setup.get("antenna_name", "current_geometry")).strip()
-                     or "current_geometry",
-        height_ft=float(height_ft),
-        swr_profile="wideband_1.2",
-        target_max_swr=float(target_swr),
-        band_sweep_points=int(band_points),
-        max_generations=int(restarts) + 1,
-        use_matcher=use_matcher,
-        polish_gain=bool(polish),
-        tune_goal=str(tune_goal),
-        # tune_spacings enabled in BOTH cases that need middle-element sliding:
-        #   * FREE: no constraints at all.
-        #   * FIXED + cap > 0: REF/last DIR pinned (in _apply), middle elements
-        #     slide between them.
-        # FIXED without a cap is unusual now but kept for safety -> positions
-        # locked.  See pages/1_Antenna_Setup.py for the cap entry.
-        tune_spacings=((str(setup.get("boom_mode", "fixed")) == "free")
-                       or bool(setup.get("boom_length_in"))),
-        grounded=(str(setup.get("grounding", "all_insulated"))
-                  in ("grounded", "all_grounded", "cell_insulated")),
-        grounding={
-            "insulated": "all_insulated",
-            "grounded": "all_grounded",
-        }.get(setup.get("grounding"),
-              str(setup.get("grounding", "all_insulated"))),
-        boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
-    )
-    started = datetime.datetime.now()
-    with st.spinner("Self-learning… (one NEC2 solve per candidate; this can take a few minutes)"):
-        result = run_learning(geo["elements"], rules_run, minis, procedure, cfg,
-                              log_fn=log, on_move=on_move_live)
-    elapsed = (datetime.datetime.now() - started).total_seconds()
-
-    m = result["final_metrics"]
-    band_max = m.get("band_max_swr", m.get("max_swr", 0))
-    csw = float(m.get("center_swr", 0.0))
-    import math as _math
-    crl = 99.0 if csw <= 1.0 else -20.0 * _math.log10((csw - 1.0) / (csw + 1.0))
-    # The optimizer's auto-fit step may have narrowed the band to honour the
-    # user's target SWR around the locked centre.  Read back the achieved edges
-    # from rules_run (match_opt mutates them in place) so the SWR plot, Report
-    # block and exports all reflect what the matcher actually delivered.
-    achieved_low = float(rules_run["global"].get("freq_mhz_low", band_low))
-    achieved_high = float(rules_run["global"].get("freq_mhz_high", band_high))
-    with st.spinner("Building full performance report…"):
-        report = perf_report.analyze(result["final_geometry"], rules_run, height_ft=float(height_ft))
-    st.session_state["al_result"] = {
-        "geometry": result["final_geometry"],
-        "band_max": band_max,
-        "gain": m.get("gain_dbi", 0),
-        "fb": m.get("fb_db", 0),
-        "center_r": float(m.get("center_r", 0.0)),
-        "center_x": float(m.get("center_x", 0.0)),
-        "center_swr": csw,
-        "center_rl": crl,
-        "goal": str(tune_goal),
-        "score": result["final_score"],
-        "low": achieved_low, "high": achieved_high, "points": int(band_points),
-        "requested_low": float(band_low), "requested_high": float(band_high),
-        "height": float(height_ft), "elapsed": elapsed,
-        "report": report,
-        "taper": v2_runner.taper_signature(),
+# ---- BACKGROUND-THREAD TUNE RUNNER -----------------------------------------
+# User: 'when I leave the tuning page and view other pages while its tuning
+# it stops the whole tuning process.. stop this from happening.. make it only
+# stop when i press stop.. this is crazy'.
+#
+# Streamlit reruns each page's script from scratch on every render, so a
+# tune that lives in the page's render thread dies the moment the user
+# navigates away.  We move the tune into a daemon thread that lives in the
+# Python process across page navigations and write its state into
+# st.session_state (which IS preserved per session).  The page polls and
+# re-renders the live status every 500 ms while the thread is alive.  A
+# Stop button sets a threading.Event the matcher's on_move callback checks;
+# when set, on_move raises match_opt.TuneStopped which auto_learn catches
+# and returns the best-so-far geometry.
+TUNE_STATE_KEY = "al_tune_state"
+if TUNE_STATE_KEY not in st.session_state:
+    st.session_state[TUNE_STATE_KEY] = {
+        "thread": None,
+        "stop_event": None,
+        "live": {"n": 0, "best": float("inf")},
+        "log_lines": [],
+        "result": None,
+        "error": None,
+        "started_at": None,
+        "elapsed": None,
     }
+TS = st.session_state[TUNE_STATE_KEY]
+
+def _ts_running():
+    t = TS.get("thread")
+    return bool(t and t.is_alive())
+
+
+# ---- LIVE STATUS PANEL (rendered on every page render, including when idle)
+st.markdown("### 📡 Live tuning status")
+live_cols = st.columns(7)
+ph_move = live_cols[0]
+ph_csw  = live_cols[1]
+ph_r    = live_cols[2]
+ph_x    = live_cols[3]
+ph_rl   = live_cols[4]
+ph_mx   = live_cols[5]
+ph_best = live_cols[6]
+ph_dof  = st.container()
+_live = TS.get("live", {}) or {}
+_n = int(_live.get("n", 0))
+ph_move.metric("Move #", f"{_n:,}")
+def _fmt(key, fmt, suffix=""):
+    v = _live.get(key)
+    return f"{v:{fmt}}{suffix}" if isinstance(v, (int, float)) else "—"
+ph_csw.metric ("Centre SWR",       _fmt("csw",  ".3f", ":1"))
+ph_r.metric   ("Centre R (Ω)",     _fmt("cr",   ".2f"))
+ph_x.metric   ("Centre X (Ω)",     _fmt("cx",   "+.2f"))
+ph_rl.metric  ("Return loss (dB)", _fmt("rl",   ".1f"))
+ph_mx.metric  ("Band-max SWR",     _fmt("mx",   ".3f"))
+_best = _live.get("best")
+ph_best.metric("Best band-max so far",
+               f"{_best:.3f}" if isinstance(_best, (int, float)) and _best < 99 else "—")
+if _live.get("dof"):
+    ph_dof.caption(("✅ ACCEPTED " if _live.get("accepted") else "❌ rejected ")
+                   + f"`{_live['dof']}` → {_live.get('value', 0):.3f}")
+elif _ts_running():
+    ph_dof.caption("Waiting for the first matcher move…")
+else:
+    ph_dof.caption("Idle.  Click RUN TUNE + LEARN below to start.")
+
+# ---- Log box ---------------------------------------------------------------
+log_box = st.empty()
+log_box.code("\n".join(TS.get("log_lines", [])[-60:]) or "(no log yet)",
+             language="text")
+
+# ---- Buttons --------------------------------------------------------------
+btn_run, btn_stop = st.columns(2)
+running_now = _ts_running()
+
+if running_now:
+    btn_run.button("RUN TUNE + LEARN", disabled=True,
+                   use_container_width=True, key="al_run_disabled",
+                   help="A tune is already running.  Hit STOP to abort.")
+    if btn_stop.button("⏸️ STOP TUNE", type="secondary",
+                       use_container_width=True, key="al_stop"):
+        if TS.get("stop_event") is not None:
+            TS["stop_event"].set()
+            st.warning("⏸️ Stop requested.  Matcher will exit on the next "
+                       "move and return the best geometry it has found.")
+else:
+    btn_stop.button("⏸️ STOP TUNE", disabled=True, use_container_width=True,
+                    key="al_stop_disabled")
+    start_clicked = btn_run.button("RUN TUNE + LEARN", type="primary",
+                                   use_container_width=True, key="al_run")
+    if start_clicked:
+        if band_high <= band_low:
+            st.error("Band high must be greater than band low.")
+            st.stop()
+
+        # Build rules_run + cfg here (in the render thread) so the background
+        # thread doesn't have to touch Streamlit state during setup.
+        rules_run = json.loads(json.dumps(rules))
+        rules_run["global"]["freq_mhz_low"] = float(band_low)
+        rules_run["global"]["freq_mhz_high"] = float(band_high)
+        rules_run["global"]["freq_mhz_center"] = float(fc_input)
+        if setup.get("boom_mode") == "fixed" and setup.get("boom_length_in"):
+            rules_run["global"]["boom_max_in"] = float(setup["boom_length_in"])
+        else:
+            rules_run["global"]["boom_max_in"] = 0.0
+
+        use_matcher = (tune_method == "matcher")
+        if use_matcher:
+            procedure = procs[0] if procs else {"name": "matcher", "steps": []}
+        else:
+            procedure = next((p for p in procs if p["name"] == sel_proc_name),
+                             {"name": "procedure", "steps": []})
+
+        cfg = LearnConfig(
+            project_name=str(setup.get("antenna_name", "current_geometry")).strip()
+                         or "current_geometry",
+            height_ft=float(height_ft),
+            swr_profile="wideband_1.2",
+            target_max_swr=float(target_swr),
+            band_sweep_points=int(band_points),
+            max_generations=int(restarts) + 1,
+            use_matcher=use_matcher,
+            polish_gain=bool(polish),
+            tune_goal=str(tune_goal),
+            tune_spacings=((str(setup.get("boom_mode", "fixed")) == "free")
+                           or bool(setup.get("boom_length_in"))),
+            grounded=(str(setup.get("grounding", "all_insulated"))
+                      in ("grounded", "all_grounded", "cell_insulated")),
+            grounding={
+                "insulated": "all_insulated",
+                "grounded": "all_grounded",
+            }.get(setup.get("grounding"),
+                  str(setup.get("grounding", "all_insulated"))),
+            boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
+        )
+        # Snapshot inputs the thread will consume.
+        thread_inputs = {
+            "elements": json.loads(json.dumps(geo["elements"])),
+            "rules": rules_run,
+            "minis": minis,
+            "procedure": procedure,
+            "cfg": cfg,
+            "band_low": float(band_low),
+            "band_high": float(band_high),
+            "band_points": int(band_points),
+            "tune_goal": str(tune_goal),
+            "height_ft": float(height_ft),
+            "fc_input": float(fc_input),
+        }
+
+        # Reset live state.
+        TS["live"] = {"n": 0, "best": float("inf")}
+        TS["log_lines"] = []
+        TS["result"] = None
+        TS["error"] = None
+        TS["started_at"] = datetime.datetime.now()
+        TS["elapsed"] = None
+        stop_event = threading.Event()
+        TS["stop_event"] = stop_event
+
+        # Import inside the closure so the thread carries the right modules.
+        from hyagi.match_opt import TuneStopped
+
+        def _log_thread(msg):
+            TS["log_lines"].append(str(msg))
+
+        def _live_thread(m):
+            # Update live state and check stop flag.  Throttle in the page
+            # render, not here -- we want EVERY move's data captured so the
+            # best-band-max counter stays accurate even on a Stop.
+            TS["live"]["n"] = TS["live"].get("n", 0) + 1
+            mx = float(m.get("band_max_swr", 0))
+            csw = float(m.get("center_swr", 0))
+            cr = float(m.get("center_r", 0))
+            cx = float(m.get("center_x", 0))
+            rl = (99.0 if csw <= 1.0 else
+                  -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+            TS["live"].update({
+                "csw": csw, "cr": cr, "cx": cx, "rl": rl, "mx": mx,
+                "dof": str(m.get("dof", "?")),
+                "value": float(m.get("value", 0)),
+                "accepted": bool(m.get("accepted")),
+            })
+            if mx < TS["live"].get("best", float("inf")):
+                TS["live"]["best"] = mx
+            if stop_event.is_set():
+                raise TuneStopped()
+
+        def _tune_thread_body(ti=thread_inputs):
+            try:
+                result = run_learning(
+                    ti["elements"], ti["rules"], ti["minis"], ti["procedure"],
+                    ti["cfg"], log_fn=_log_thread, on_move=_live_thread,
+                )
+                report = perf_report.analyze(
+                    result["final_geometry"], ti["rules"],
+                    height_ft=ti["height_ft"])
+                m = result["final_metrics"]
+                csw = float(m.get("center_swr", 0.0))
+                crl = (99.0 if csw <= 1.0 else
+                       -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+                TS["result"] = {
+                    "geometry": result["final_geometry"],
+                    "band_max": m.get("band_max_swr", m.get("max_swr", 0)),
+                    "gain": m.get("gain_dbi", 0),
+                    "fb": m.get("fb_db", 0),
+                    "center_r": float(m.get("center_r", 0.0)),
+                    "center_x": float(m.get("center_x", 0.0)),
+                    "center_swr": csw,
+                    "center_rl": crl,
+                    "goal": ti["tune_goal"],
+                    "score": result["final_score"],
+                    "low": float(ti["rules"]["global"].get("freq_mhz_low",
+                                                          ti["band_low"])),
+                    "high": float(ti["rules"]["global"].get("freq_mhz_high",
+                                                            ti["band_high"])),
+                    "requested_low": ti["band_low"],
+                    "requested_high": ti["band_high"],
+                    "points": ti["band_points"], "height": ti["height_ft"],
+                    "report": report, "taper": v2_runner.taper_signature(),
+                }
+            except Exception as ex:
+                TS["error"] = f"{type(ex).__name__}: {ex}"
+                TS["log_lines"].append(f"[error] {TS['error']}")
+            finally:
+                if TS.get("started_at"):
+                    TS["elapsed"] = (datetime.datetime.now()
+                                     - TS["started_at"]).total_seconds()
+
+        t = threading.Thread(target=_tune_thread_body, daemon=True,
+                             name="hybrid_auto7_tune")
+        if add_script_run_ctx is not None:
+            add_script_run_ctx(t)
+        TS["thread"] = t
+        t.start()
+        st.success("Tune started in the background.  Navigate freely — it "
+                   "keeps running until you press STOP or it finishes.")
+        time.sleep(0.1)
+        st.rerun()
+
+# ---- Auto-refresh while a tune is running ---------------------------------
+# Pulls fresh live state from the daemon thread every 500 ms.  When the user
+# navigates away, this loop dies; the thread keeps running and the live state
+# is restored when they navigate back.
+if _ts_running():
+    time.sleep(0.5)
+    st.rerun()
+
+# ---- Pull a freshly finished thread result into al_result -----------------
+# When the daemon thread finished since the last render, hand the result to
+# the existing 'al_result' section below so the rest of the page works
+# unchanged.
+if TS.get("result") and not st.session_state.get("al_result_id") == id(TS["result"]):
+    res = dict(TS["result"])
+    res["elapsed"] = TS.get("elapsed") or 0.0
+    st.session_state["al_result"] = res
+    st.session_state["al_result_id"] = id(TS["result"])
+
+if TS.get("error"):
+    st.error(f"Tune failed: {TS['error']}")
+
 
 res = st.session_state.get("al_result")
 if res:
