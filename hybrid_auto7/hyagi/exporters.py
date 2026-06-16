@@ -39,14 +39,42 @@ def _center_mhz(rules, center_mhz):
 def to_nec(elements, rules, height_ft=30.0, taper="auto", points=21):
     """Return a NEC-2 input deck (string) for the geometry: tapered-Al elements
     over real ground, a band sweep (FR) across rules['global'] and a full
-    hemisphere radiation pattern (RP).  Drop-in for nec2c / 4nec2 / xnec2c."""
+    hemisphere radiation pattern (RP).  Drop-in for nec2c / 4nec2 / xnec2c --
+    the SAME deck the optimizer evaluates internally, so the numbers you see
+    in xnec2c after a 'Run' will match the app's Result panel.
+
+    Adds a rich CM (comment) header so when opened in xnec2c the user sees
+    the antenna name / element table / taper / band / ground state at a
+    glance, instead of just 'CM hybrid_auto7'."""
     glb = rules.get("global", {})
     f_low = float(glb["freq_mhz_low"])
     f_high = float(glb["freq_mhz_high"])
+    fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
     points = max(2, int(points))
     freqs = [f_low + i * (f_high - f_low) / (points - 1) for i in range(points)]
-    return v2_runner.build_nec_card(elements, freqs, height_ft=height_ft,
+
+    deck = v2_runner.build_nec_card(elements, freqs, height_ft=height_ft,
                                     pattern=True, taper=taper)
+
+    # Replace the default "CM hybrid_auto7 v2 (tapered Al)" with a richer
+    # multi-line header.  NEC-2 spec: any line starting with CM is a comment;
+    # the deck terminates the comment block with the first non-CM line (CE).
+    cm_lines = ["CM hybrid_auto7 NEC-2 deck",
+                "CM Open in xnec2c: Run -> shows the same SWR / R / X / pattern",
+                "CM the app's Result panel and Report compute internally.",
+                f"CM Centre frequency : {fc:.3f} MHz",
+                f"CM Band sweep       : {f_low:.3f} - {f_high:.3f} MHz "
+                f"({points} pts)",
+                f"CM Height AGL       : {float(height_ft):.1f} ft",
+                f"CM Taper            : {v2_runner.taper_signature()}"]
+    # List every element so xnec2c users can see at a glance what's modelled.
+    for el in elements:
+        cm_lines.append(f"CM   {str(el['name']):<8} pos={float(el['position_in']):7.2f}\" "
+                        f"len={float(el['length_in']):7.2f}\"")
+    # Splice the new header in place of the old single CM line.
+    body = "\n".join(line for line in deck.splitlines()
+                    if not (line.startswith("CM") and "hybrid_auto7" in line))
+    return "\n".join(cm_lines + [body])
 
 
 # ---------------------------------------------------------------------------
