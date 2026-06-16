@@ -42,18 +42,27 @@ def test_stagger_seed_noop_for_narrow_band():
 
 
 def test_stagger_seed_owa_3mhz_band():
-    """On a 3 MHz OWA band the seed must place XFRMR and COUPLER SHORTER
-    than the DE (= resonate above design centre).  The design centre stays
-    pinned at rules.global.freq_mhz_center -- it does NOT drift to the band
-    midpoint, and REF/DIRn/DE lengths must not be rescaled."""
+    """On a 3 MHz OWA band the new ASYMMETRIC stagger places XFRMR LONGER
+    than DE (low-side dip) and COUPLER SHORTER than DE (high-side dip).
+    Previous code put both shorter than DE; the empirical NEC2 study showed
+    that pattern can only deliver asymmetric (high-side-only) bandwidth and
+    the matcher couldn't reach symmetric ±1.5 MHz coverage.  See
+    scripts/hybrid_physics_findings.md."""
     seeded = match_opt._apply_stagger_seed(
         copy.deepcopy(ELEMENTS), RULES,
         f_low=25.0, f_high=28.0, fc=26.5, log_fn=None,
     )
     lens = _names_lens(seeded)
     de_len = lens["DE"]
-    assert lens["XFRMR"] < de_len - 0.5    # must remain shorter than DE
-    assert lens["COUPLER"] < de_len - 0.5
+    # NEW ASYMMETRIC RULE:
+    assert lens["XFRMR"] > de_len, (
+        f"XFRMR must be LONGER than DE (low-side dip); got XFRMR={lens['XFRMR']}, "
+        f"DE={de_len}"
+    )
+    assert lens["COUPLER"] < de_len - 5.0, (
+        f"COUPLER must be SHORTER than DE (high-side dip); got "
+        f"COUPLER={lens['COUPLER']}, DE={de_len}"
+    )
     # Sanity: still inside rules bounds.
     xrules = RULES["elements"]["XFRMR"]
     crules = RULES["elements"]["COUPLER"]
@@ -83,14 +92,20 @@ def test_stagger_seed_does_not_drift_design_centre():
 
 
 def test_stagger_seed_xfrmr_above_coupler_in_freq():
-    """COUPLER (most coupled to the director array) should sit slightly
-    higher in frequency than XFRMR -> shorter length. Both above DE."""
+    """In the new ASYMMETRIC stagger: COUPLER is the SHORTER of the two
+    helpers (resonant ABOVE fc, high-side dip), XFRMR is LONGER than DE
+    (resonant BELOW fc, low-side dip).  So in frequency space: XFRMR < fc
+    < COUPLER, and in length space: COUPLER < DE < XFRMR."""
     seeded = match_opt._apply_stagger_seed(
         copy.deepcopy(ELEMENTS), RULES,
         f_low=25.0, f_high=28.0, fc=26.5, log_fn=None,
     )
     lens = _names_lens(seeded)
-    assert lens["COUPLER"] <= lens["XFRMR"]   # COUPLER tuned to higher f
+    assert lens["COUPLER"] < lens["XFRMR"], (
+        f"COUPLER (high-side helper, shorter) must be shorter than XFRMR "
+        f"(low-side helper, longer); got COUPLER={lens['COUPLER']}, "
+        f"XFRMR={lens['XFRMR']}"
+    )
 
 
 @pytest.mark.skipif(shutil.which("nec2c") is None, reason="nec2c not installed")

@@ -86,39 +86,56 @@ def _len_bounds(rules, name, default=(1.0, 9999.0)):
 # ---------------------------------------------------------------------------
 def _stagger_lengths(de_len, f_low, f_high, fc):
     """Return target (de_len, xf_len, cp_len) stagger-tuned for the band.
-    Lengths scale inversely with target frequency (electrical length ~ 1/f
-    at fixed diameter), keeping the DE near fc and pushing XFRMR/COUPLER to
-    higher frequencies above fc so their resonances flatten the band-high
-    edge SWR while the DE handles the band-low edge skirt."""
+
+    Empirical NEC2 study (scripts/hybrid_physics_study.py) confirmed the
+    canonical OWA 3-dip wideband pattern requires asymmetric placement of
+    the two helpers around DE:
+
+      XFRMR resonant BELOW fc -> XFRMR LONGER than DE -> low-side dip
+      DE     resonant AT fc
+      COUPLER resonant ABOVE fc -> COUPLER SHORTER than DE -> high-side dip
+
+    The previous code put both helpers above fc (both shorter than DE),
+    which gave asymmetric coverage with no low-side helper.  The 3-dip
+    sweet spot we observed: XFRMR ~ DE + 5\", COUPLER ~ DE - 10\".  Spread
+    scales with the requested bandwidth; wider band -> wider stagger.
+    Capped at +/-5% which is the practical OWA Q limit.
+    """
     bw = max(0.0, float(f_high) - float(f_low))
-    # Fractional offsets above centre for XFRMR and COUPLER targets.  Wider
-    # band -> push them further out so the resonant trio spans the band.  We
-    # cap at +/-5% which is the practical OWA range (Q of the cell limits how
-    # far apart the resonators can sit without re-introducing a hump).
-    spread = min(0.05, 0.5 * bw / max(fc, 1.0))
-    f_xf = fc * (1.0 + 0.45 * spread)
-    f_cp = fc * (1.0 + 0.95 * spread)
-    # Lengths scale as fc/f_target for the same physical taper / height.
-    xf_target = de_len * (fc / f_xf)
-    cp_target = de_len * (fc / f_cp)
+    # Empirical stagger: from scripts/hybrid_physics_findings.md, the
+    # working 3-dip configurations had:
+    #   XFRMR ~ DE + 2..5"  (longer than DE -> resonant ~2% BELOW fc)
+    #   COUPLER ~ DE - 10..17"  (much shorter -> resonant ~8% ABOVE fc)
+    # The asymmetry is critical: a small XFRMR-above-DE offset adds the
+    # low-side dip; a LARGE COUPLER-below-DE offset adds the high-side dip.
+    # Mirror that here.  Spread scales with band width but never beyond the
+    # NEC-verified safe ranges.
+    spread = min(0.025, 0.4 * bw / max(fc, 1.0))
+    # XFRMR: small offset below fc (2-3%) -> length DE * (1 + small)
+    xf_freq_offset = min(0.022, spread)            # capped 2.2% below fc
+    # COUPLER: large offset above fc (6-9%) -> length DE * (1 - large)
+    cp_freq_offset = min(0.085, 3.5 * spread)      # capped 8.5% above fc
+    f_xf = fc * (1.0 - xf_freq_offset)             # BELOW fc (XFRMR longer)
+    f_cp = fc * (1.0 + cp_freq_offset)             # ABOVE fc (COUPLER shorter)
+    # Length scales inversely with target resonance frequency (same diameter,
+    # same height -> physical length ratio ~= fc / f_target).
+    xf_target = de_len * (fc / f_xf)              # > de_len
+    cp_target = de_len * (fc / f_cp)              # < de_len
     return de_len, xf_target, cp_target
 
 
 def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
-    """Mutate the driven cell lengths to a stagger-tuned seed for wide bands.
+    """Place the driven cell in the canonical 3-dip OWA configuration.
 
-    Stagger tuning rule:
-      DE        -> resonant at the user's DESIGN centre (rules.global.freq_mhz_center)
-                   -- this is the centre the user set; we never drift it.
-      XFRMR     -> shorter than DE  -> resonant slightly above design centre
-      COUPLER   -> shorter still    -> resonant a bit further above
+    Stagger rule (data-driven, NOT the old 'both helpers above DE' rule):
+      XFRMR  -> longer than DE  -> resonance BELOW design fc -> low-side dip
+      DE     -> at design fc                                  -> centre
+      COUPLER -> shorter than DE -> resonance ABOVE design fc  -> high-side dip
 
-    f_low / f_high are the user's wideband TARGET edges (a half-width around
-    the design centre, set on Tune & Learn).  We only use them to size the
-    stagger SPREAD; we do NOT shift the antenna centre to the band midpoint
-    and we do NOT rescale REF / directors -- those stay where the user has
-    them so the antenna's natural resonance keeps sitting at the design fc.
-    No-op for narrow bands (<=1 MHz) and for arrays without an XFRMR/COUPLER."""
+    f_low / f_high size the SPREAD; the design centre stays at user's fc.
+    REF and directors are left alone (they own the beam shape).  No-op for
+    narrow bands (<=1 MHz) and for arrays without an XFRMR/COUPLER.
+    """
     bw = float(f_high) - float(f_low)
     if bw <= 1.0:
         return elements
@@ -132,25 +149,28 @@ def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
     if de is None or (xf is None and cp is None):
         return elements
 
-    # Stagger the cell about the DESIGN centre.  Keeps the antenna's natural
-    # resonance pinned where the user wants it; the XFRMR / COUPLER move
-    # ABOVE it to flatten the high-side band edge while the DE's own skirt
-    # handles the low-side edge.
-    de_lo, de_hi = _len_bounds(rules, "DE", (185.0, 225.0))
+    de_lo, de_hi = _len_bounds(rules, "DE", (185.0, 235.0))
     de_len_seed = min(de_hi, max(de_lo, float(de["length_in"])))
     _, xf_t, cp_t = _stagger_lengths(de_len_seed, f_low, f_high, design_fc)
     de["length_in"] = round(de_len_seed, 3)
     if xf is not None:
-        lo, hi = _len_bounds(rules, "XFRMR", (170.0, 210.0))
-        xf["length_in"] = round(min(hi, max(lo, min(de_len_seed - 1.0, xf_t))), 3)
+        # NEW: no de_len-1 cap.  Default bounds widened to 170..235 so a
+        # DE+10 stagger seed (XFRMR > DE) isn't blocked by stale rule
+        # bounds carried over from the 'XFRMR must be < DE' assumption.
+        lo, hi = _len_bounds(rules, "XFRMR", (170.0, 235.0))
+        xf["length_in"] = round(min(hi, max(lo, xf_t)), 3)
     if cp is not None:
-        lo, hi = _len_bounds(rules, "COUPLER", (150.0, 200.0))
-        cp["length_in"] = round(min(hi, max(lo, min(de_len_seed - 1.0, cp_t))), 3)
+        # COUPLER stays shorter than DE in the OWA pattern, but allow the
+        # full bound range in case the user has a non-standard rule.
+        lo, hi = _len_bounds(rules, "COUPLER", (150.0, 220.0))
+        cp["length_in"] = round(min(hi, max(lo, cp_t)), 3)
     if log_fn:
         log_fn(f"  [stagger-seed] bw={bw:.2f} MHz  design_fc={design_fc:.3f}  "
                f"DE={de['length_in']:.2f}  "
                f"XFRMR={xf['length_in'] if xf else 0:.2f}  "
-               f"COUPLER={cp['length_in'] if cp else 0:.2f}")
+               f"COUPLER={cp['length_in'] if cp else 0:.2f}  "
+               "(XFRMR longer than DE -> low-side dip; "
+               "COUPLER shorter than DE -> high-side dip)")
     return elements
 
 
@@ -378,7 +398,23 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
         rl_bonus = -0.05 * min(40.0, rl_db)             # up to -2.0
     # Band edges (priority 4) -- last, lightest term.
     band_term = mx + 0.05 * av
-    return band_term + swr_pin + x_term + rl_bonus, mx
+
+    # Multi-dip reward (priority 4b).  The OWA wideband only works if the
+    # SWR curve has MULTIPLE distinct minima across the band (low/centre/high
+    # dips).  Counting local minima under 2.0:1 and rewarding each one tips
+    # the descent toward stagger-tuned configurations.  Without this term
+    # the matcher only minimised the WORST band-edge SWR, which doesn't
+    # care about dip placement; the multi-dip pattern only emerged by luck.
+    dip_count = 0
+    if len(curve) >= 3:
+        for i in range(1, len(curve) - 1):
+            if (curve[i][3] < curve[i - 1][3]
+                    and curve[i][3] < curve[i + 1][3]
+                    and curve[i][3] < 2.0):
+                dip_count += 1
+    multi_dip_bonus = -0.30 * dip_count          # each dip <2.0:1 = -0.30 cost
+
+    return band_term + swr_pin + x_term + rl_bonus + multi_dip_bonus, mx
 
 
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,

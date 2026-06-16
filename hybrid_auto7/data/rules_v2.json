@@ -7,8 +7,8 @@
     },
     "XFRMR": {
       "length_min_in": 170.0,
-      "length_max_in": 210.0,
-      "notes": "impedance transformer, between REF and DE"
+      "length_max_in": 235.0,
+      "notes": "impedance transformer between REF and DE.  Can be LONGER than DE to provide a low-side resonance dip for OWA wideband (empirically verified -- see scripts/hybrid_physics_findings.md)."
     },
     "DE": {
       "length_min_in": 185.0,
@@ -17,8 +17,8 @@
     },
     "COUPLER": {
       "length_min_in": 150.0,
-      "length_max_in": 200.0,
-      "notes": "couples DE to director array"
+      "length_max_in": 220.0,
+      "notes": "couples DE to director array; shorter than DE -> resonance ABOVE fc -> high-side dip in OWA wideband"
     },
     "DIR1": {
       "length_min_in": 145.0,
