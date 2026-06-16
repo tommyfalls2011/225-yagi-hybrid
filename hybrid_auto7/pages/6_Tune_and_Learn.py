@@ -392,7 +392,7 @@ def _ts_running():
 
 # ---- LIVE STATUS PANEL (rendered on every page render, including when idle)
 st.markdown("### 📡 Live tuning status")
-live_cols = st.columns(7)
+live_cols = st.columns(8)
 ph_move = live_cols[0]
 ph_csw  = live_cols[1]
 ph_r    = live_cols[2]
@@ -400,6 +400,7 @@ ph_x    = live_cols[3]
 ph_rl   = live_cols[4]
 ph_mx   = live_cols[5]
 ph_best = live_cols[6]
+ph_probe = live_cols[7]
 ph_dof  = st.container()
 _live = TS.get("live", {}) or {}
 _n = int(_live.get("n", 0))
@@ -415,6 +416,12 @@ ph_mx.metric  ("Band-max SWR",     _fmt("mx",   ".3f"))
 _best = _live.get("best")
 ph_best.metric("Best band-max so far",
                f"{_best:.3f}" if isinstance(_best, (int, float)) and _best < 99 else "—")
+ph_probe.metric("Probes since improvement",
+                f"{_live.get('probes_since_improve', 0):,}",
+                help="How many rejected probe candidates the matcher has tried "
+                     "since the last accepted (improving) move.  When this "
+                     "climbs past ~200 with no improvement the matcher is "
+                     "stuck -- hit STOP and try different settings.")
 if _live.get("dof"):
     ph_dof.caption(("✅ ACCEPTED " if _live.get("accepted") else "❌ rejected ")
                    + f"`{_live['dof']}` → {_live.get('value', 0):.3f}")
@@ -524,24 +531,35 @@ else:
             TS["log_lines"].append(str(msg))
 
         def _live_thread(m):
-            # Update live state and check stop flag.  Throttle in the page
-            # render, not here -- we want EVERY move's data captured so the
-            # best-band-max counter stays accurate even on a Stop.
+            # Update live state on EVERY move so the move counter and 'best'
+            # tracker stay accurate, but DISPLAY-side fields (R/X/SWR/RL/mx)
+            # are only refreshed on ACCEPTED moves -- rejected probes flash
+            # garbage values (band-max 90, 200, 500) for a moment before the
+            # matcher walks back, and the live panel shouldn't pretend that
+            # the antenna's actual state ever was at those values.
             TS["live"]["n"] = TS["live"].get("n", 0) + 1
             mx = float(m.get("band_max_swr", 0))
-            csw = float(m.get("center_swr", 0))
-            cr = float(m.get("center_r", 0))
-            cx = float(m.get("center_x", 0))
-            rl = (99.0 if csw <= 1.0 else
-                  -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
-            TS["live"].update({
-                "csw": csw, "cr": cr, "cx": cx, "rl": rl, "mx": mx,
-                "dof": str(m.get("dof", "?")),
-                "value": float(m.get("value", 0)),
-                "accepted": bool(m.get("accepted")),
-            })
             if mx < TS["live"].get("best", float("inf")):
                 TS["live"]["best"] = mx
+            accepted = bool(m.get("accepted"))
+            if accepted:
+                csw = float(m.get("center_swr", 0))
+                cr = float(m.get("center_r", 0))
+                cx = float(m.get("center_x", 0))
+                rl = (99.0 if csw <= 1.0 else
+                      -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+                TS["live"].update({
+                    "csw": csw, "cr": cr, "cx": cx, "rl": rl, "mx": mx,
+                    "dof": str(m.get("dof", "?")),
+                    "value": float(m.get("value", 0)),
+                    "accepted": True,
+                    "probes_since_improve": 0,
+                })
+            else:
+                # Track probes-since-improvement so the user can see search
+                # effort even though no display number is changing.
+                TS["live"]["probes_since_improve"] = (
+                    int(TS["live"].get("probes_since_improve", 0)) + 1)
             if stop_event.is_set():
                 raise TuneStopped()
 

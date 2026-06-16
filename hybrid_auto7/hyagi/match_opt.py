@@ -717,6 +717,36 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     f_high = float(glb["freq_mhz_high"])
     fc = float(glb.get("freq_mhz_center", 0.5 * (f_low + f_high)))
 
+    # ---- RESONANCE PRE-PASS ------------------------------------------------
+    # 'Cut DE for resonance first' -- what any experienced bench operator
+    # does before worrying about gain / F-B / bandwidth.  If the input
+    # geometry's centre SWR is above 3 at fc (i.e. the antenna is way off
+    # the user's chosen centre frequency), sweep DE length until centre
+    # SWR drops below 3 BEFORE the wideband descent runs.  Costs ~25 NEC
+    # solves (~10-15 seconds at 26 ft) and saves the matcher 100+ probed
+    # candidates that would otherwise be evaluated at horrible band-edge
+    # SWR values.
+    try:
+        _curve_pre, _mx_pre, _av_pre = v2_runner.band_swr_curve(
+            elements, fc, fc, 1, height_ft)
+        centre_swr_pre = float(_curve_pre[0][3]) if _curve_pre else 99.0
+    except Exception:
+        centre_swr_pre = 99.0
+    if centre_swr_pre > 3.0:
+        try:
+            from . import resonance
+            if log_fn:
+                log_fn(f"  [resonance-pre-pass] centre SWR {centre_swr_pre:.2f} "
+                       f"at {fc:.3f} MHz -- tuning DE length for resonance "
+                       f"first (cut DE before chasing bandwidth)")
+            elements = resonance.find_de_resonance(
+                elements, fc_mhz=fc, height_ft=height_ft,
+                rules=rules, log_fn=log_fn,
+            )
+        except Exception as ex:
+            if log_fn:
+                log_fn(f"  [resonance-pre-pass] skipped: {ex}")
+
     # ---- HARD CAP: enforce the user's locked boom length up-front -----------
     # New spec (user, latest): FIXED + cap means the boom is EXACTLY the cap
     # length -- REF locked at position 0, last director locked at exactly the

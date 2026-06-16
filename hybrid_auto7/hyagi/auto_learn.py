@@ -306,27 +306,47 @@ def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
     want_names = sorted(str(e["name"]).upper() for e in fallback_elements)
     n_want = len(fallback_elements)
     pattern = f"{cfg.project_name}|%"
-    # When we have a design signature, prefer rows whose design_key contains
-    # it -- they were stored by THIS exact band/taper/height/n combo.  Fall
-    # back to the broader project-name match if no signature hit exists.
-    candidate_ids = []
+    # Three filter tiers, MOST specific first.  Each tier's hits get the
+    # sanity probe; if all are rejected we fall through to the next tier.
+    # Tier 1: exact sig match (taper + band + height + n_elements).
+    # Tier 2: sig parts WITHOUT band -- allow a CB tune to seed an OWA tune
+    #         IF the SWR sanity probe says the geometry still works in the
+    #         user's CURRENT band.  Stops 'change bandwidth -> start from
+    #         garbage' (user complaint).
+    # Tier 3: project-name-only -- legacy DBs with no sig embedded.
+    tiers = []
     if sig:
-        cur.execute("""
-            SELECT r.id FROM runs r
-            WHERE r.status='DONE' AND r.design_key LIKE ?
-              AND r.design_key LIKE ?
-              AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
-            ORDER BY r.max_swr ASC, r.avg_swr ASC
-        """, (pattern, f"%|{sig}|%", n_want))
-        candidate_ids = [r["id"] for r in cur.fetchall()]
-    if not candidate_ids:
-        cur.execute("""
-            SELECT r.id FROM runs r
-            WHERE r.status='DONE' AND r.design_key LIKE ?
-              AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
-            ORDER BY r.max_swr ASC, r.avg_swr ASC
-        """, (pattern, n_want))
-        candidate_ids = [r["id"] for r in cur.fetchall()]
+        tiers.append(("sig",      f"%|{sig}|%"))
+        # Pull out the taper|height|n part and drop the band segment.
+        parts = sig.split("|")
+        if len(parts) >= 4:
+            taper, _band, h, n = parts[0], parts[1], parts[2], parts[3]
+            broader = f"%|{taper}|%|{h}|{n}|%"     # any band
+            tiers.append(("sig_no_band", broader))
+    tiers.append(("name_only", None))               # no extra filter
+
+    candidate_ids: list = []
+    seen: set = set()
+    for tier_name, extra in tiers:
+        if extra is None:
+            cur.execute("""
+                SELECT r.id, r.design_key FROM runs r
+                WHERE r.status='DONE' AND r.design_key LIKE ?
+                  AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+                ORDER BY r.max_swr ASC, r.avg_swr ASC
+            """, (pattern, n_want))
+        else:
+            cur.execute("""
+                SELECT r.id, r.design_key FROM runs r
+                WHERE r.status='DONE' AND r.design_key LIKE ?
+                  AND r.design_key LIKE ?
+                  AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+                ORDER BY r.max_swr ASC, r.avg_swr ASC
+            """, (pattern, extra, n_want))
+        for r in cur.fetchall():
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                candidate_ids.append((r["id"], tier_name))
 
     # Resolve sanity threshold: a fresh seed at the wrong band typically has
     # SWR < 5 at worst; > 5 means the warm-start geometry's resonance is
@@ -336,7 +356,7 @@ def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
     glb = cfg_band                              # (f_low, f_high) of THIS run
     h_ft = float(height_ft) if height_ft is not None else float(getattr(cfg, "height_ft", 30.0))
 
-    for run_id in candidate_ids:
+    for run_id, tier_name in candidate_ids:
         ecur = con.cursor()
         ecur.execute("SELECT name, position_in, length_in FROM elements "
                      "WHERE run_id=? ORDER BY position_in", (run_id,))
@@ -355,11 +375,16 @@ def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
             mx = 99.0
         if mx > sanity_swr:
             if log_fn:
-                log_fn(f"[warm-start] skipping run #{run_id}: "
+                log_fn(f"[warm-start] skipping run #{run_id} ({tier_name}): "
                        f"baseline SWR {mx:.2f} > {sanity_swr:.0f} in current band "
                        f"({glb[0]:.3f}-{glb[1]:.3f} MHz) -- geometry is tuned for "
                        f"a different design.")
             continue
+        if log_fn and tier_name != "sig":
+            log_fn(f"[warm-start] cross-signature match (tier={tier_name}): "
+                   f"using run #{run_id} -- candidate SWR {mx:.2f} <= sanity "
+                   f"threshold so its geometry will help even though the "
+                   f"design signature isn't exact.")
         return els, run_id
     return fallback_elements, None
 

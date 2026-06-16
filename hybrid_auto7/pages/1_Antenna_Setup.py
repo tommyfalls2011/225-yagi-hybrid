@@ -182,8 +182,14 @@ with b2:
         # to fit; nothing can exceed it.
         max_boom_in = (float(boom_length_ft) * 12.0
                        if (boom_mode == "fixed" and boom_length_ft) else None)
-        new_geo = hybrid_seed.build_geometry(int(n_dir), center_mhz=center_mhz,
-                                             max_boom_in=max_boom_in)
+        rules_for_seed = _load(str(RULES_PATH), {"global": {}, "elements": {}})
+        with st.spinner("Calibrating seed geometry against NEC2 (resonance pass)…"):
+            new_geo = hybrid_seed.build_geometry(
+                int(n_dir), center_mhz=center_mhz, max_boom_in=max_boom_in,
+                tune_to_fc=True,
+                height_ft=float(height_ft),
+                rules=rules_for_seed,
+            )
         GEO_PATH.write_text(json.dumps(new_geo, indent=2))
         last_pos = max(float(e["position_in"]) for e in new_geo["elements"])
         msg = (f"Built a fresh {len(new_geo['elements'])}-element hybrid "

@@ -13,13 +13,21 @@ build time, never overrun.
 from __future__ import annotations
 
 
-def build_geometry(n_directors, center_mhz=27.195, max_boom_in=None):
+def build_geometry(n_directors, center_mhz=27.195, max_boom_in=None, *,
+                   tune_to_fc=False, height_ft=22.0, rules=None, log_fn=None):
     """Return {'elements': [...]} for a hybrid with n_directors directors.
 
-    n_directors clamps to 0..18 (the UI slider goes up to 14 directors / 18 total
-    elements -- this gives headroom).  If `max_boom_in` is set the director
+    n_directors clamps to 0..18.  If `max_boom_in` is set the director
     spacings are uniformly scaled so the last director's position is <= that
-    value, with a 1" tip margin for the optimizer to wiggle within."""
+    value, with a 1" tip margin for the optimizer to wiggle within.
+
+    `tune_to_fc=True` adds a one-shot NEC2 calibration pass after the static
+    seed: sweeps DE length to find where the antenna actually resonates at
+    `center_mhz` (accounting for fat tubing + ground + grounding state).
+    The static 0.484*lambda formula was for thin wire in free space; on
+    0.625" tubing at 22-30 ft over real ground it produces antennas that
+    resonate ~1 MHz HIGH.  Calibrating against the real NEC model fixes
+    that so the seed geometry is already at fc on day one."""
     n_directors = max(0, min(18, int(n_directors)))
     wl = 11811.0 / float(center_mhz)          # free-space wavelength, inches
 
@@ -75,5 +83,19 @@ def build_geometry(n_directors, center_mhz=27.195, max_boom_in=None):
         if last_pos > 0:
             for el in elements:
                 el["position_in"] = round(float(el["position_in"]) * cap / last_pos, 4)
+
+    # Calibrate DE length against NEC2 reality so the seed is actually
+    # resonant at fc (not the thin-wire 0.484*lambda approximation).  See
+    # hyagi.resonance.find_de_resonance for the search strategy.
+    if tune_to_fc:
+        try:
+            from . import resonance
+            elements = resonance.find_de_resonance(
+                elements, fc_mhz=float(center_mhz), height_ft=float(height_ft),
+                rules=rules, log_fn=log_fn,
+            )
+        except Exception as ex:
+            if log_fn:
+                log_fn(f"  [resonance] calibration skipped: {ex}")
 
     return {"elements": elements}
