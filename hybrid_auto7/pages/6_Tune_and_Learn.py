@@ -186,6 +186,16 @@ with c2:
                                  "finer resolution and a longer tune.  More points "
                                  "= stricter wideband match check.")
     restarts = st.slider("Search restarts (escape local minima)", 0, 4, 1, key="al_restarts")
+    respect_cell = st.checkbox(
+        "🛡️ Respect my seeded cell (skip stagger seed)",
+        value=True, key="al_respect_cell",
+        help="Default ON.  Skips the wideband stagger seed that would override "
+             "your XFRMR / COUPLER / DE / REF lengths with an OWA-derived "
+             "starting layout.  Keep this ON when you've used the 'Seed cell "
+             "layout' panel on Antenna Setup with your bench-tested numbers -- "
+             "the matcher will then only tune the DIRECTORS around your cell.  "
+             "Uncheck to let the stagger seed help you find a starting layout "
+             "from scratch (overrides whatever you saved).")
 
 st.markdown("#### Tuning method")
 tune_method = st.radio(
@@ -465,6 +475,11 @@ else:
         rules_run["global"]["freq_mhz_low"] = float(band_low)
         rules_run["global"]["freq_mhz_high"] = float(band_high)
         rules_run["global"]["freq_mhz_center"] = float(fc_input)
+        # When the user has explicitly seeded a cell layout via the Antenna
+        # Setup panel and checked 'respect my seeded cell', tell the matcher
+        # to SKIP the stagger seed (which would otherwise override their
+        # XFRMR/COUPLER lengths with the OWA-style defaults).
+        rules_run["global"]["respect_seeded_cell"] = bool(respect_cell)
         if setup.get("boom_mode") == "fixed" and setup.get("boom_length_in"):
             rules_run["global"]["boom_max_in"] = float(setup["boom_length_in"])
         else:

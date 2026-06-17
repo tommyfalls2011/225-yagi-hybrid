@@ -135,7 +135,17 @@ def _apply_stagger_seed(elements, rules, f_low, f_high, fc, log_fn=None):
     f_low / f_high size the SPREAD; the design centre stays at user's fc.
     REF and directors are left alone (they own the beam shape).  No-op for
     narrow bands (<=1 MHz) and for arrays without an XFRMR/COUPLER.
-    """
+
+    Honours rules.global.respect_seeded_cell:  when True, the user has
+    explicitly seeded the cell via the Antenna Setup panel and we MUST NOT
+    override their XFRMR / COUPLER lengths -- only the descent should touch
+    them after that.  Default is False (the seed runs as before)."""
+    if rules.get("global", {}).get("respect_seeded_cell"):
+        if log_fn:
+            log_fn("  [stagger-seed] respect_seeded_cell=True -- skipping the "
+                   "wideband stagger seed (user's XFRMR/COUPLER lengths kept "
+                   "as-is from the Antenna Setup seed panel).")
+        return elements
     bw = float(f_high) - float(f_low)
     if bw <= 1.0:
         return elements
@@ -399,22 +409,15 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
     # Band edges (priority 4) -- last, lightest term.
     band_term = mx + 0.05 * av
 
-    # Multi-dip reward (priority 4b).  The OWA wideband only works if the
-    # SWR curve has MULTIPLE distinct minima across the band (low/centre/high
-    # dips).  Counting local minima under 2.0:1 and rewarding each one tips
-    # the descent toward stagger-tuned configurations.  Without this term
-    # the matcher only minimised the WORST band-edge SWR, which doesn't
-    # care about dip placement; the multi-dip pattern only emerged by luck.
-    dip_count = 0
-    if len(curve) >= 3:
-        for i in range(1, len(curve) - 1):
-            if (curve[i][3] < curve[i - 1][3]
-                    and curve[i][3] < curve[i + 1][3]
-                    and curve[i][3] < 2.0):
-                dip_count += 1
-    multi_dip_bonus = -0.30 * dip_count          # each dip <2.0:1 = -0.30 cost
+    # NOTE: a 'multi-dip bonus' term was tried here (each SWR dip < 2:1 added
+    # -0.30 to cost) but caused real-world regressions: a geometry with one
+    # very deep dip at SWR 1.12 lost to a 3-dip 1.5/1.5/1.5 geometry because
+    # the bonus (-0.9) outweighed the band-max delta.  The OWA multi-dip
+    # response emerges naturally from the asymmetric stagger seed + the
+    # descent's standard band-max minimisation; explicitly rewarding dip
+    # count over-rewards mediocre matches.  Removed.
 
-    return band_term + swr_pin + x_term + rl_bonus + multi_dip_bonus, mx
+    return band_term + swr_pin + x_term + rl_bonus, mx
 
 
 def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,

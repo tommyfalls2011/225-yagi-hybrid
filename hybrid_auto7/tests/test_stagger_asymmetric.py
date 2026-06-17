@@ -107,10 +107,13 @@ def test_narrow_band_no_stagger():
     )
 
 
-def test_objective_rewards_multi_dip_curves():
-    """The new multi-dip term in _objective() must give a LOWER score to a
-    curve with 3 distinct SWR dips than to a curve with 1 dip, holding
-    other terms equal."""
+def test_objective_naturally_prefers_multi_dip_when_avg_lower():
+    """The matcher previously had an explicit multi-dip bonus term in
+    _objective() that caused real-world regressions (a 1.12-SWR single-dip
+    geometry losing to a mediocre 3-dip one because the bonus outweighed
+    the band-max delta).  The term was removed.  The natural mx+0.05*av
+    objective STILL prefers genuinely better multi-dip curves whenever the
+    average SWR drops -- which is the cleaner physical signal anyway."""
     from unittest.mock import patch
 
     def fake_band_swr_curve_1dip(*a, **k):
@@ -123,7 +126,7 @@ def test_objective_rewards_multi_dip_curves():
         return pts, 2.5, 1.8
 
     def fake_band_swr_curve_3dip(*a, **k):
-        # Three dips at 26, 27.2, 28.4 -- classic OWA, same band-max
+        # Three dips at 26, 27.2, 28.4 -- classic OWA with lower avg SWR
         pts = [(25.7, 50.0, -2.0, 2.5),
                (26.0, 50.0, -1.0, 1.2),    # dip 1
                (26.5, 50.0,  0.0, 1.6),
@@ -147,6 +150,6 @@ def test_objective_rewards_multi_dip_curves():
             fc=27.195, goal="wideband",
         )
     assert obj_3dip < obj_1dip, (
-        f"3-dip curve (obj={obj_3dip:.3f}) must be PREFERRED to "
-        f"1-dip curve (obj={obj_1dip:.3f}); multi-dip bonus is broken"
+        f"3-dip curve (obj={obj_3dip:.3f}) must be preferred to "
+        f"1-dip curve (obj={obj_1dip:.3f}) via the natural mx+0.05*av term"
     )
