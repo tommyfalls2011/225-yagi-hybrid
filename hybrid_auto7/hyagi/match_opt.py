@@ -599,22 +599,30 @@ def _pos_bounds(cur, name, rules):
 
 
 def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
-                   fb_weight=0.5, f_low=None, f_high=None, points=None,
+                   fb_weight=0.3, f_low=None, f_high=None, points=None,
                    target_swr=None):
     """Tune the BEAM (REF + directors) for max gain + F/B, leaving the cell
     to the match phase.  This is the hybrid's whole point: REF+directors
     shape the beam, the driven cell handles the wideband match, so
     directors are NOT shortened to chase SWR.
 
-    CRITICAL CO-OPTIMIZATION: every trial move ALSO checks band-max SWR.
-    A beam move that would push band-max above (target_swr * 1.15) is
-    REJECTED outright, even if it improves gain / F-B.  Without this guard
-    the beam phase happily shreds the match (SWR 1.12 -> 2.5) chasing F-B,
-    then the match phase can't recover and the tune ends up worse than
-    where it started -- exactly the regression the user reported.
+    CO-OPTIMIZATION GUARD: every trial move ALSO checks band-max SWR.
+    A beam move that would push band-max above the SWR ceiling is rejected
+    even if it improves gain / F-B.  Ceiling = max(target_swr * 1.5, 1.5)
+    -- a 50% slack above the user's target (or a 1.5:1 floor for very
+    tight targets like 1.02) gives beam room to explore without letting
+    it shred the match.  Previous 15% slack was too restrictive and made
+    the beam phase reject most moves on tight targets.
+
+    fb_weight=0.3 (was 0.5): the beam objective is gain + fb_weight * F/B.
+    Lowering the F/B weight makes gain dominate more trade-offs.  Users
+    were seeing slight gain drops (14.15 -> 14.05) with the 0.5 weight
+    because F/B improvements at the cost of small gain hits scored higher.
+    0.3 means it takes ~3 dB of F/B improvement to justify a 1 dB gain
+    drop instead of ~2 dB -- closer to bench operator instinct.
     """
     prev_pts = getattr(v2_runner, "EVAL_FREQ_POINTS", 3)
-    v2_runner.EVAL_FREQ_POINTS = 1          # gain/F-B at centre only -> fast
+    v2_runner.EVAL_FREQ_POINTS = 1
     try:
         cur = copy.deepcopy(elements)
         m = _beam_metrics(cur, rules, height_ft)
@@ -624,18 +632,17 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
         dirs = [e["name"] for e in cur if str(e["name"]).upper().startswith("DIR")]
         len_names = (["REF"] if _el(cur, "REF") else []) + dirs
 
-        # SWR ceiling for beam-move rejection.  15% slack above the user's
-        # target is enough to let beam moves explore but not enough to let
-        # them silently destroy the match.  Disabled when target_swr / band
-        # args weren't passed (legacy callers).
-        swr_ceiling = (float(target_swr) * 1.15
+        # SWR ceiling -- generous so the beam phase actually has room to
+        # explore.  Was target * 1.15 which choked the search on tight
+        # targets (1.05 -> ceiling 1.21, too narrow).  Now target * 1.5
+        # with a 1.5 absolute floor.
+        swr_ceiling = (max(float(target_swr) * 1.5, 1.5)
                        if target_swr is not None
                        and f_low is not None and f_high is not None
                        and points is not None
                        else None)
 
         def _swr_ok(trial):
-            """True if band-max SWR is within the ceiling (or no ceiling set)."""
             if swr_ceiling is None:
                 return True
             try:
@@ -646,14 +653,10 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
                 return False
 
         rej_swr = 0
-        # Empirically-driven step sizes -- 4.0 was too volatile (the user
-        # reported geometry jumping then collapsing).  2.0 / 1.0 / 0.5 makes
-        # the beam phase converge in finer hops.
         for step in (2.0, 1.0, 0.5):
             improved, rounds = True, 0
             while improved and rounds < 5:
                 improved, rounds = False, rounds + 1
-                # Lengths of reflector + directors.
                 for name in len_names:
                     el = _el(cur, name)
                     lo, hi = _len_bounds(rules, name, (140.0, 240.0))
@@ -671,9 +674,8 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
                             continue
                         if not _swr_ok(trial):
                             rej_swr += 1
-                            continue                # SWR guard fired -- reject
+                            continue
                         best, cur, improved = _beam_score(mm, fb_weight), trial, True
-                # Reflector spacing (always) + director spacings (boom-free).
                 pos_names = (["REF"] if _el(cur, "REF") else [])
                 if tune_spacings:
                     pos_names += dirs
@@ -697,9 +699,11 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
                         best, cur, improved = _beam_score(mm, fb_weight), trial, True
             if log_fn:
                 mm = _beam_metrics(cur, rules, height_ft) or {}
+                ceiling_msg = (f" ceiling {swr_ceiling:.2f}"
+                               if swr_ceiling else "")
                 rej_msg = (f"  rej-swr {rej_swr}" if rej_swr else "")
                 log_fn(f"    [beam] step={step} gain={mm.get('gain_dbi', 0):.2f} "
-                       f"fb={mm.get('fb_db', 0):.2f}{rej_msg}")
+                       f"fb={mm.get('fb_db', 0):.2f}{rej_msg}{ceiling_msg}")
         return cur
     finally:
         v2_runner.EVAL_FREQ_POINTS = prev_pts
