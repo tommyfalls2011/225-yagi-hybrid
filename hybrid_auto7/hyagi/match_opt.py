@@ -598,11 +598,21 @@ def _pos_bounds(cur, name, rules):
     return lo, max(lo, hi)
 
 
-def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn, fb_weight=0.5):
-    """Tune the BEAM (REF reflector + directors) for maximum gain + F/B, leaving
-    the matching cell to the match phase. This is the hybrid's whole point: the
-    reflector+directors form the beam, the driven cell forms the wideband match,
-    so the directors are NOT shortened to chase SWR."""
+def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
+                   fb_weight=0.5, f_low=None, f_high=None, points=None,
+                   target_swr=None):
+    """Tune the BEAM (REF + directors) for max gain + F/B, leaving the cell
+    to the match phase.  This is the hybrid's whole point: REF+directors
+    shape the beam, the driven cell handles the wideband match, so
+    directors are NOT shortened to chase SWR.
+
+    CRITICAL CO-OPTIMIZATION: every trial move ALSO checks band-max SWR.
+    A beam move that would push band-max above (target_swr * 1.15) is
+    REJECTED outright, even if it improves gain / F-B.  Without this guard
+    the beam phase happily shreds the match (SWR 1.12 -> 2.5) chasing F-B,
+    then the match phase can't recover and the tune ends up worse than
+    where it started -- exactly the regression the user reported.
+    """
     prev_pts = getattr(v2_runner, "EVAL_FREQ_POINTS", 3)
     v2_runner.EVAL_FREQ_POINTS = 1          # gain/F-B at centre only -> fast
     try:
@@ -613,11 +623,37 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn, fb_weight=
         best = _beam_score(m, fb_weight)
         dirs = [e["name"] for e in cur if str(e["name"]).upper().startswith("DIR")]
         len_names = (["REF"] if _el(cur, "REF") else []) + dirs
-        for step in (4.0, 2.0, 1.0):
+
+        # SWR ceiling for beam-move rejection.  15% slack above the user's
+        # target is enough to let beam moves explore but not enough to let
+        # them silently destroy the match.  Disabled when target_swr / band
+        # args weren't passed (legacy callers).
+        swr_ceiling = (float(target_swr) * 1.15
+                       if target_swr is not None
+                       and f_low is not None and f_high is not None
+                       and points is not None
+                       else None)
+
+        def _swr_ok(trial):
+            """True if band-max SWR is within the ceiling (or no ceiling set)."""
+            if swr_ceiling is None:
+                return True
+            try:
+                _c, mx, _av = v2_runner.band_swr_curve(
+                    trial, f_low, f_high, points, height_ft)
+                return mx <= swr_ceiling
+            except Exception:
+                return False
+
+        rej_swr = 0
+        # Empirically-driven step sizes -- 4.0 was too volatile (the user
+        # reported geometry jumping then collapsing).  2.0 / 1.0 / 0.5 makes
+        # the beam phase converge in finer hops.
+        for step in (2.0, 1.0, 0.5):
             improved, rounds = True, 0
             while improved and rounds < 5:
                 improved, rounds = False, rounds + 1
-                # lengths of reflector + directors
+                # Lengths of reflector + directors.
                 for name in len_names:
                     el = _el(cur, name)
                     lo, hi = _len_bounds(rules, name, (140.0, 240.0))
@@ -629,9 +665,15 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn, fb_weight=
                         trial = copy.deepcopy(cur)
                         _el(trial, name)["length_in"] = nl
                         mm = _beam_metrics(trial, rules, height_ft)
-                        if mm and _beam_score(mm, fb_weight) > best + 1e-4:
-                            best, cur, improved = _beam_score(mm, fb_weight), trial, True
-                # reflector spacing (always) + director spacings (boom-free)
+                        if not mm:
+                            continue
+                        if _beam_score(mm, fb_weight) <= best + 1e-4:
+                            continue
+                        if not _swr_ok(trial):
+                            rej_swr += 1
+                            continue                # SWR guard fired -- reject
+                        best, cur, improved = _beam_score(mm, fb_weight), trial, True
+                # Reflector spacing (always) + director spacings (boom-free).
                 pos_names = (["REF"] if _el(cur, "REF") else [])
                 if tune_spacings:
                     pos_names += dirs
@@ -645,12 +687,19 @@ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn, fb_weight=
                         trial = copy.deepcopy(cur)
                         _el(trial, name)["position_in"] = npos
                         mm = _beam_metrics(trial, rules, height_ft)
-                        if mm and _beam_score(mm, fb_weight) > best + 1e-4:
-                            best, cur, improved = _beam_score(mm, fb_weight), trial, True
+                        if not mm:
+                            continue
+                        if _beam_score(mm, fb_weight) <= best + 1e-4:
+                            continue
+                        if not _swr_ok(trial):
+                            rej_swr += 1
+                            continue
+                        best, cur, improved = _beam_score(mm, fb_weight), trial, True
             if log_fn:
                 mm = _beam_metrics(cur, rules, height_ft) or {}
+                rej_msg = (f"  rej-swr {rej_swr}" if rej_swr else "")
                 log_fn(f"    [beam] step={step} gain={mm.get('gain_dbi', 0):.2f} "
-                       f"fb={mm.get('fb_db', 0):.2f}")
+                       f"fb={mm.get('fb_db', 0):.2f}{rej_msg}")
         return cur
     finally:
         v2_runner.EVAL_FREQ_POINTS = prev_pts
@@ -708,7 +757,9 @@ def _optimize_hybrid(elements, rules, height_ft, target_swr, points, f_low,
         log_fn(f"  [hybrid] baseline (cell match): band_max_swr={best_mx:.3f}  "
                f"gain={gm.get('gain_dbi', 0):.2f}  fb={gm.get('fb_db', 0):.2f}")
     for it in range(iters):
-        trial = _optimize_beam(cur, rules, height_ft, tune_spacings, log_fn)
+        trial = _optimize_beam(cur, rules, height_ft, tune_spacings, log_fn,
+                               f_low=f_low, f_high=f_high, points=points,
+                               target_swr=target_swr)
         trial, mx = _match_cell(trial, rules, height_ft, f_low, f_high, points,
                                 target_swr, fc, steps, log_fn, move_log, on_move)
         score, mx = _hybrid_overall(trial, rules, height_ft, f_low, f_high,
