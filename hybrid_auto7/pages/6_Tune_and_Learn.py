@@ -546,16 +546,18 @@ else:
             TS["log_lines"].append(str(msg))
 
         def _live_thread(m):
-            # Update live state on EVERY move so the move counter and 'best'
-            # tracker stay accurate, but DISPLAY-side fields (R/X/SWR/RL/mx)
-            # are only refreshed on ACCEPTED moves -- rejected probes flash
-            # garbage values (band-max 90, 200, 500) for a moment before the
-            # matcher walks back, and the live panel shouldn't pretend that
-            # the antenna's actual state ever was at those values.
+            # Update live state on EVERY move so the move counter stays
+            # accurate, but DISPLAY-side fields (R/X/SWR/RL/mx) AND the
+            # 'best band-max so far' tracker only refresh on ACCEPTED moves.
+            # Rejected probes briefly produce attractive band-max values
+            # (lower) that the matcher's objective correctly rejects because
+            # other priorities (X / RL / centre) got worse.  Showing those
+            # values in the 'best' tile confuses the user into thinking
+            # the matcher 'threw away' a good result -- when in reality the
+            # matcher kept the geometry that's better overall per their
+            # priority ladder.
             TS["live"]["n"] = TS["live"].get("n", 0) + 1
             mx = float(m.get("band_max_swr", 0))
-            if mx < TS["live"].get("best", float("inf")):
-                TS["live"]["best"] = mx
             accepted = bool(m.get("accepted"))
             if accepted:
                 csw = float(m.get("center_swr", 0))
@@ -570,6 +572,11 @@ else:
                     "accepted": True,
                     "probes_since_improve": 0,
                 })
+                # ONLY accepted moves can lower "best band-max so far" -- so
+                # the tile always reflects what the matcher actually kept,
+                # never a tantalising-but-rejected probe value.
+                if mx < TS["live"].get("best", float("inf")):
+                    TS["live"]["best"] = mx
             else:
                 # Track probes-since-improvement so the user can see search
                 # effort even though no display number is changing.
