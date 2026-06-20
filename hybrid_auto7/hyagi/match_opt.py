@@ -397,8 +397,12 @@ def _objective(elements, rules, height_ft, f_low, f_high, points, fc=None, goal=
         x_term = 0.40 * abs_x                          # max 1.0 at +/-2.5
     else:
         x_term = 1.0 + 5.0 * (abs_x - 2.5)             # >>5x slope after that
-    # Centre-SWR pin (priority 3).  Slack of 1.07 only adds +0.28.
-    swr_pin = 4.0 * max(0.0, csw_centre - 1.0)
+    # Centre-SWR pin (priority 3).  The user's stated slack is "SWR needs to
+    # be 1.0:1 but 1.07 is OK if X or RL require it".  So below 1.07 there's
+    # NO penalty -- the matcher is then free to focus on band-max instead of
+    # squeezing the last 0.05 out of an already-good centre.  Above 1.07 the
+    # penalty climbs 4x per unit of overshoot, dominating quickly.
+    swr_pin = 4.0 * max(0.0, csw_centre - 1.07)
     # Return-loss bonus (priority 2) -- small reward for high RL at centre.
     if csw_centre <= 1.0:
         rl_bonus = -2.0                                 # cap the bonus
