@@ -760,6 +760,25 @@ def _optimize_hybrid(elements, rules, height_ft, target_swr, points, f_low,
         gm = v2_runner.evaluate(best, rules, height_ft=height_ft)
         log_fn(f"  [hybrid] baseline (cell match): band_max_swr={best_mx:.3f}  "
                f"gain={gm.get('gain_dbi', 0):.2f}  fb={gm.get('fb_db', 0):.2f}")
+
+    # "Already good enough" early-exit.  If the baseline is already
+    # comfortably under the user's target SWR (with 20% slack), iterations
+    # are unlikely to improve it and just waste 30-50 minutes.  This is
+    # exactly the user's case: baseline 1.12 vs target 1.03 with a near-
+    # perfectly-tuned warm-start geometry -- the matcher should report
+    # 'baseline is near-optimal, skipping iterations' instead of grinding.
+    if best_mx <= float(target_swr) * 1.2:
+        if log_fn:
+            log_fn(f"  [hybrid] baseline band-max {best_mx:.3f} is within "
+                   f"20% of target {target_swr:.2f} -- the warm-start "
+                   f"geometry is already near-optimal.  Skipping the "
+                   f"{iters}-iteration beam/match loop.  If you want more "
+                   f"aggressive optimisation, set a lower target SWR or "
+                   f"a wider band.")
+        curve, mx, _av = v2_runner.band_swr_curve(best, f_low, f_high,
+                                                  points, height_ft)
+        return best, mx, curve
+
     for it in range(iters):
         trial = _optimize_beam(cur, rules, height_ft, tune_spacings, log_fn,
                                f_low=f_low, f_high=f_high, points=points,
