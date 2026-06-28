@@ -954,23 +954,31 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
 
     # Restart to escape shallow minima. Wideband restarts only while still above
     # target; resonant always uses the full restart budget (centre match is hard).
-    # For OWA-wide bands (>1 MHz) widen the perturbation on the driven cell so
-    # restarts can actually JUMP between stagger-tune basins instead of nudging
-    # within the same one.
+    # For OWA-wide bands widen the perturbation on the driven cell AND directors
+    # so restarts can JUMP between stagger-tune basins.  Directors are NOT
+    # exempted here -- user reports of physical antennas covering 2.7 MHz at
+    # SWR <= 1.3 mean such basins exist; the matcher must actually search for
+    # them.  Previous 'directors mostly alone' policy kept us locked near the
+    # warm-start cell which was the local minimum the user kept hitting.
     bw_mhz = float(f_high) - float(f_low)
-    cell_span = 0.40 if bw_mhz > 1.5 else (0.25 if bw_mhz > 1.0 else 0.15)
+    # Wider bands -> more aggressive perturbation:
+    cell_span = 0.60 if bw_mhz > 1.5 else (0.40 if bw_mhz > 1.0 else 0.20)
+    dir_span  = 0.30 if bw_mhz > 1.5 else (0.20 if bw_mhz > 1.0 else 0.08)
     r = 0
     while r < restarts and (goal == "resonant" or best_mx > target_swr):
         r += 1
         pv = dict(best_vec)
-        for k in pv:  # perturb only the matching cell, leave directors mostly alone
-            if k.endswith("_len") and k[:-4].upper().startswith("DIR"):
-                continue
+        for k in pv:
             lo, hi = bounds[k]
-            # Driven-cell lengths get the OWA-wide span; other DOFs use 15%.
             base = k[:-4] if k.endswith(("_len", "_gap")) else k
-            is_cell = base.lower() in ("de", "xf", "cp")
-            frac = cell_span if (is_cell and goal == "wideband") else 0.15
+            is_cell = base.lower() in ("de", "xf", "cp", "ref")
+            is_dir = base.upper().startswith("DIR")
+            if is_cell:
+                frac = cell_span
+            elif is_dir:
+                frac = dir_span                  # directors NOW perturb too
+            else:
+                frac = 0.15
             span = (hi - lo) * frac
             pv[k] = round(min(hi, max(lo, pv[k] + rng.uniform(-span, span))), 3)
         v, o, mx = _descend(pv, bounds, elements, de_pos, rules, height_ft,
@@ -1064,24 +1072,27 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
                    f"(band {f_low:.3f}-{f_high:.3f}) -- {verdict}")
 
     # ---- BASELINE REVERT GUARD ---------------------------------------------
-    # Compare the final geometry's band-max OVER THE ORIGINAL USER BAND to
-    # the baseline we snapshotted at entry.  If the descent / auto-fit /
-    # polish made things WORSE on the user's actual band, return the
-    # baseline geometry instead -- never punish the user with a regression.
+    # Final guard against TOTAL regressions only.  Compares final band-max on
+    # the user's original band against the baseline.  Reverts ONLY if final
+    # is catastrophically worse (>= 50% worse).  Previous 0.02 threshold was
+    # too tight -- it triggered on legitimate wideband searches where the
+    # final geometry trades narrow-band SWR for wider coverage and the user
+    # had reported real-world data showing such configurations exist.
     try:
         _fc, final_mx_user_band, _fav = v2_runner.band_swr_curve(
             best_elements, baseline_f_low, baseline_f_high, points, height_ft)
     except Exception:
         final_mx_user_band = float("inf")
-    if final_mx_user_band > baseline_mx + 0.02 and baseline_mx < float("inf"):
+    if (final_mx_user_band > baseline_mx * 1.5
+            and baseline_mx < float("inf")
+            and baseline_mx < 5.0):
         if log_fn:
             log_fn(f"  [revert] final band-max {final_mx_user_band:.3f} "
-                   f"WORSE than baseline {baseline_mx:.3f} on the user's "
-                   f"original band ({baseline_f_low:.3f}-{baseline_f_high:.3f} "
-                   f"MHz) -- reverting to the input geometry.  The optimizer "
-                   f"didn't find an improvement; your previous tune was better.")
+                   f"is >= 50% worse than baseline {baseline_mx:.3f} on the "
+                   f"user's original band ({baseline_f_low:.3f}-"
+                   f"{baseline_f_high:.3f} MHz) -- catastrophic regression, "
+                   f"reverting to the input geometry.")
         best_elements = baseline_geom
-        # Restore original band edges so the report shows the right span.
         rules["global"]["freq_mhz_low"] = baseline_f_low
         rules["global"]["freq_mhz_high"] = baseline_f_high
         f_low, f_high = baseline_f_low, baseline_f_high
