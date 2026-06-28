@@ -937,6 +937,21 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
     if log_fn:
         log_fn(f"  [match:{goal}] base pass -> band_max_swr={best_mx:.3f}")
 
+    # ---- BASELINE SAFETY ---------------------------------------------------
+    # Snapshot the input geometry so we can REVERT to it if the descent +
+    # auto-fit + restarts end up at a worse band-max.  User hit this exact
+    # case with a 6-hour ±2 MHz wideband tune: baseline 1.116, after 6 hours
+    # the matcher returned 1.493.  The optimizer must NEVER return a result
+    # worse than what it started with.  Evaluated over the ORIGINAL band
+    # the user requested, not whatever auto-fit narrowed to.
+    baseline_geom = copy.deepcopy(elements)
+    baseline_f_low, baseline_f_high = f_low, f_high
+    try:
+        _bc, baseline_mx, _bav = v2_runner.band_swr_curve(
+            baseline_geom, baseline_f_low, baseline_f_high, points, height_ft)
+    except Exception:
+        baseline_mx = float("inf")
+
     # Restart to escape shallow minima. Wideband restarts only while still above
     # target; resonant always uses the full restart budget (centre match is hard).
     # For OWA-wide bands (>1 MHz) widen the perturbation on the driven cell so
@@ -999,9 +1014,14 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
         attempt = 0
         achieved_hw = 0.5 * (f_high - f_low)
         target_swr_with_slack = float(target_swr) * 1.05
+        prev_mx = best_mx
+        no_progress = 0
+        # Cap at 3 retries (was 6) -- each retry is a full descent + polish,
+        # ~15-20 min for 401-point sweeps.  Six retries gave a 6-hour run for
+        # the user with zero net improvement.  Three is plenty.
         while (best_mx > target_swr_with_slack
                and achieved_hw > 0.10
-               and attempt < 6):
+               and attempt < 3):
             attempt += 1
             achieved_hw *= 0.80
             f_low = fc - achieved_hw
@@ -1024,11 +1044,47 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
                     f_low, f_high, points, ceiling, log_fn)
             if log_fn:
                 log_fn(f"  [auto-fit] retry {attempt} -> band_max_swr={best_mx:.3f}")
+            # Early-exit if a retry didn't materially improve band-max.
+            # Two consecutive retries with <2% improvement -> stop.
+            if best_mx >= prev_mx * 0.98:
+                no_progress += 1
+                if no_progress >= 2:
+                    if log_fn:
+                        log_fn(f"  [auto-fit] no progress for 2 retries in a row "
+                               f"-- stopping the narrowing.  Best achievable is "
+                               f"band-max {best_mx:.3f} at +/-{achieved_hw:.2f} MHz.")
+                    break
+            else:
+                no_progress = 0
+            prev_mx = best_mx
         if attempt > 0 and log_fn:
             verdict = ("MET target" if best_mx <= target_swr_with_slack
                        else "best achievable; user target unmet")
             log_fn(f"  [auto-fit] settled at half-width +/-{achieved_hw:.2f} MHz "
                    f"(band {f_low:.3f}-{f_high:.3f}) -- {verdict}")
+
+    # ---- BASELINE REVERT GUARD ---------------------------------------------
+    # Compare the final geometry's band-max OVER THE ORIGINAL USER BAND to
+    # the baseline we snapshotted at entry.  If the descent / auto-fit /
+    # polish made things WORSE on the user's actual band, return the
+    # baseline geometry instead -- never punish the user with a regression.
+    try:
+        _fc, final_mx_user_band, _fav = v2_runner.band_swr_curve(
+            best_elements, baseline_f_low, baseline_f_high, points, height_ft)
+    except Exception:
+        final_mx_user_band = float("inf")
+    if final_mx_user_band > baseline_mx + 0.02 and baseline_mx < float("inf"):
+        if log_fn:
+            log_fn(f"  [revert] final band-max {final_mx_user_band:.3f} "
+                   f"WORSE than baseline {baseline_mx:.3f} on the user's "
+                   f"original band ({baseline_f_low:.3f}-{baseline_f_high:.3f} "
+                   f"MHz) -- reverting to the input geometry.  The optimizer "
+                   f"didn't find an improvement; your previous tune was better.")
+        best_elements = baseline_geom
+        # Restore original band edges so the report shows the right span.
+        rules["global"]["freq_mhz_low"] = baseline_f_low
+        rules["global"]["freq_mhz_high"] = baseline_f_high
+        f_low, f_high = baseline_f_low, baseline_f_high
 
     curve, mx, _av = v2_runner.band_swr_curve(best_elements, f_low, f_high, points, height_ft)
     return best_elements, mx, curve
