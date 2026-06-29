@@ -1,0 +1,44 @@
+{
+  "boom_diameter_in": 1.5,
+  "boom_length_ft": 18.0,
+  "cell_mounting_style": "full_cell_insulated",
+  "center_half_len_in": 36.0,
+  "center_od_in": 0.625,
+  "champion_run_id": null,
+  "design_priority": "wideband",
+  "element_count": 3,
+  "element_overrides": {
+    "COUPLER": {
+      "length_in": 134.0,
+      "position_in": 52.0
+    },
+    "DE": {
+      "length_in": 213.0,
+      "position_in": 47.0
+    },
+    "DIR1": {
+      "length_in": 194.5,
+      "position_in": 99.0
+    },
+    "XFRMR": {
+      "length_in": 201.0,
+      "position_in": 26.0
+    }
+  },
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "ground_epsr": 13.0,
+  "ground_mode": "average",
+  "ground_sigma_s_per_m": 0.005,
+  "height_ft": 54.0,
+  "min_front_back_db": 15.0,
+  "mode": "hybrid",
+  "name": "cb_3el_hybrid_54ft",
+  "notes": "3-element hybrid count; physical 5-element champion seed",
+  "outer_od_in": 0.5,
+  "prefer_gain": true,
+  "target_max_swr": 1.25,
+  "target_z_ohm": 50.0,
+  "tuning_procedure": "cell_then_directors_repeat",
+  "tx_power_watts": 5000.0
+}

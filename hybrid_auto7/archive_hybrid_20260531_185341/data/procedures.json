@@ -1,0 +1,361 @@
+{
+  "schema_version": 1,
+  "last_updated": "2026-05-23T19:45:37+00:00",
+  "procedures": {
+    "cell_only_match": {
+      "name": "Cell-only Match Tune",
+      "category": "cell",
+      "description": "Tunes XFRMR + DE + COUPLER for best impedance match. Starts DE at 60\", finds spacing sweet spot, then lengths, DE-only move, fine nudges.",
+      "entry": "./learn_cell_only.py",
+      "default_args": {},
+      "editable_params": {
+        "de_start_in": {
+          "label": "Starting DE position (in)",
+          "default": 60.0,
+          "min": 36.0,
+          "max": 96.0,
+          "step": 1.0
+        },
+        "xfrmr_spacing": {
+          "label": "Initial XFRMR spacing behind DE (in)",
+          "default": 13.0,
+          "min": 4.0,
+          "max": 36.0,
+          "step": 0.5
+        },
+        "coupler_spacing": {
+          "label": "Initial COUPLER spacing ahead of DE (in)",
+          "default": 13.0,
+          "min": 4.0,
+          "max": 36.0,
+          "step": 0.5
+        },
+        "boom_ft": {
+          "label": "Boom length (ft)",
+          "default": 18.0,
+          "min": 12.0,
+          "max": 36.0,
+          "step": 0.5
+        }
+      },
+      "stages": [
+        "stage1_xsp",
+        "stage2_csp",
+        "stage3_de_pos",
+        "stage4_x_len",
+        "stage5_c_len",
+        "stage6_de_len",
+        "stage7_de_only_move",
+        "stage8_nudges"
+      ],
+      "target_metrics": {
+        "max_swr": 1.5,
+        "center_r_tol": 5.0,
+        "center_x_tol": 5.0
+      }
+    },
+    "cell_cascade": {
+      "name": "Cell Cascade (DE \u2192 +XFRMR \u2192 +COUPLER)",
+      "category": "cell",
+      "description": "Research procedure: Phase 1 DE-only resonance, Phase 2 add XFRMR to drive R\u219250, Phase 3 add COUPLER to drive |X|\u21920. Only overwrites best_cell_seed.json if it beats existing score.",
+      "entry": "./learn_cell_cascade.py",
+      "default_args": {},
+      "editable_params": {
+        "de_start_in": {
+          "label": "Starting DE position (in)",
+          "default": 48.0,
+          "min": 36.0,
+          "max": 96.0,
+          "step": 1.0
+        },
+        "force_promote": {
+          "label": "Force promote (allow XFRMR>DE if NEC says so)",
+          "default": false,
+          "type": "bool"
+        }
+      },
+      "stages": [
+        "phase1_de_resonance",
+        "phase2_add_xfrmr_R50",
+        "phase3_add_coupler_X0"
+      ],
+      "target_metrics": {
+        "max_swr": 1.5
+      }
+    },
+    "cell_cascade_cfirst": {
+      "name": "Cell Cascade \u2014 Coupler First (test)",
+      "category": "cell",
+      "description": "Same as cell_cascade but COUPLER is tuned before XFRMR. Experimental ordering test.",
+      "entry": "./learn_cell_only_cfirst.py",
+      "default_args": {},
+      "editable_params": {},
+      "stages": [
+        "phase1_de_resonance",
+        "phase2_add_coupler",
+        "phase3_add_xfrmr"
+      ],
+      "target_metrics": {
+        "max_swr": 1.5
+      }
+    },
+    "full_hybrid_from_seed": {
+      "name": "Full Hybrid Tune from Cell Seed",
+      "category": "full",
+      "description": "Uses latest tuned cell seed (XFRMR+DE+COUPLER locked) and tunes REF + N directors around it. Scores on real_gain + F/B + SWR every iteration.",
+      "entry": "./learn_from_cell_seed.py",
+      "default_args": {
+        "--cell-seed": "data/cell_learning_runs/best_cell_seed.json"
+      },
+      "editable_params": {
+        "n_directors": {
+          "label": "Number of directors",
+          "default": 4,
+          "min": 1,
+          "max": 8,
+          "step": 1
+        },
+        "priority": {
+          "label": "Priority",
+          "default": "balanced",
+          "choices": [
+            "balanced",
+            "gain",
+            "swr"
+          ]
+        }
+      },
+      "stages": [
+        "seed_load",
+        "ref_length",
+        "dir1...dirN",
+        "validate"
+      ],
+      "target_metrics": {
+        "gain_dbi": 14.5,
+        "fb_db": 18.0,
+        "max_swr": 1.5
+      }
+    },
+    "smart_explore": {
+      "name": "Smart Explore (KB-backed)",
+      "category": "explore",
+      "description": "Phase 1 random DE position search. Phase 2 builds out REF+DIR1-3, including XFRMR/COUPLER spacing tunes 4\"-36\". Writes winners + bad starts to persistent KB.",
+      "entry": "./learn_smart.py",
+      "default_args": {},
+      "editable_params": {
+        "trials": {
+          "label": "Phase 1 random DE trials",
+          "default": 20,
+          "min": 5,
+          "max": 200,
+          "step": 5,
+          "cli": "--trials"
+        },
+        "top_k": {
+          "label": "Top-K cells to build out",
+          "default": 3,
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "cli": "--top-k"
+        },
+        "use_kb": {
+          "label": "Skip Phase 1 (use stored good_cells)",
+          "default": false,
+          "type": "bool",
+          "cli": "--use-kb"
+        }
+      },
+      "stages": [
+        "phase1_explore_de",
+        "phase2_buildout_REF_DIR1_DIR2_DIR3",
+        "spacing_repass"
+      ],
+      "target_metrics": {
+        "gain_dbi": 14.5,
+        "fb_db": 18.0,
+        "max_swr": 1.5
+      }
+    },
+    "full_3el_legacy": {
+      "name": "3-Element Full Learning (legacy)",
+      "category": "full",
+      "description": "Older 3-element hybrid learner. Random reflector seed lengths + greedy 10-stage tune. Useful for baseline comparisons.",
+      "entry": "./learn_3el_hybrid.py",
+      "default_args": {},
+      "editable_params": {
+        "smart_seeds": {
+          "label": "Use Learning Insights for seeds (env: LEARN_SMART_SEEDS=1)",
+          "default": false,
+          "type": "bool",
+          "env": "LEARN_SMART_SEEDS"
+        }
+      },
+      "stages": [
+        "stage1_xsp",
+        "stage2_csp",
+        "stage3_de_pos",
+        "stage4_x_len",
+        "stage5_c_len",
+        "stage6_de_len",
+        "stage7_ref_len",
+        "stage8_cell_move",
+        "stage9_dir1_pos",
+        "stage10_dir1_len"
+      ],
+      "target_metrics": {
+        "gain_dbi": 12.0,
+        "fb_db": 18.0,
+        "max_swr": 1.5
+      }
+    },
+    "design_pipeline": {
+      "name": "Run Design (full project pipeline)",
+      "category": "project",
+      "description": "Runs hyagi.design pipeline: cell tune \u2192 DIR1/2/3 individual tune \u2192 director-pair co-tune \u2192 REF length+position \u2192 repeat cell \u2192 final sim. Reads project overrides.",
+      "entry": "./run.py design {project_name}",
+      "default_args": {},
+      "editable_params": {
+        "level": {
+          "label": "Tuning depth",
+          "default": "deep",
+          "choices": [
+            "quick",
+            "normal",
+            "deep"
+          ]
+        }
+      },
+      "stages": [
+        "cell_tune",
+        "dir1_individual",
+        "dir2_individual",
+        "dir3_individual",
+        "dir1_dir2_pair",
+        "dir2_dir3_pair",
+        "ref_length",
+        "ref_position",
+        "cell_repeat",
+        "final_sim"
+      ],
+      "target_metrics": {
+        "gain_dbi": 14.5,
+        "fb_db": 18.0,
+        "max_swr": 1.5
+      }
+    },
+    "dir1_shorten_strict_progression": {
+      "kind": "custom_stages",
+      "name": "DIR1 shorten (strict progression)",
+      "description": "Pull DIR1 down in 0.5\" steps. Keep DE/XFRMR/COUPLER locked.\nReject any step where DIR1 >= COUPLER or DIR2 >= DIR1.\nStop when SWR rises >0.1 or F/B drops >1 dB from previous step.",
+      "stages": [
+        "lock_de_xfrmr_coupler",
+        "read_current_dir1_length",
+        "step_dir1_down_0p5in",
+        "guard_dir1_lt_coupler",
+        "guard_strict_progression",
+        "eval_nec_score",
+        "compare_to_previous",
+        "loop_until_swr_rises_or_fb_drops",
+        "record_best_to_kb"
+      ],
+      "entry": null,
+      "category": "custom"
+    },
+    "roof_tune_workflow": {
+      "kind": "recipe",
+      "name": "Roof tune workflow",
+      "description": "Pull DIR1 down in 0.5\" steps. Keep DE/XFRMR/COUPLER locked.\nReject any step where DIR1 >= COUPLER or DIR2 >= DIR1.\nStop when SWR rises >0.1 or F/B drops >1 dB from previous step.",
+      "entry": null,
+      "category": "custom",
+      "steps": [
+        "cell_only_match",
+        "dir1_shorten_strict_progression",
+        "full_hybrid_from_seed"
+      ]
+    },
+    "speacial_seed": {
+      "kind": "recipe",
+      "name": "speacial seed",
+      "description": "3 element learn,  full hybrid tune from seed",
+      "steps": [
+        "full_3el_legacy",
+        "full_hybrid_from_seed"
+      ],
+      "category": "custom"
+    },
+    "openems_validate": {
+      "name": "OpenEMS validate (scaffold)",
+      "category": "validate",
+      "description": "FDTD cross-check of a winning NEC geometry. Install openEMS first.",
+      "entry": "./openems_validate.py",
+      "default_args": {
+        "--nec": "models/full_hybrid_4dir_LATEST.nec"
+      },
+      "editable_params": {
+        "nec_path": {
+          "label": "NEC file",
+          "default": "models/full_hybrid_4dir_LATEST.nec",
+          "cli": "--nec"
+        }
+      },
+      "stages": [
+        "parse_nec",
+        "check_openems",
+        "build_csxcad",
+        "run_fdtd",
+        "compare"
+      ],
+      "target_metrics": {},
+      "kind": "builtin"
+    }
+  },
+  "hybrid": [
+    {
+      "id": "roof_tune_workflow",
+      "enabled": true
+    },
+    {
+      "id": "dir1_shorten_strict_progression",
+      "enabled": true
+    },
+    {
+      "id": "full_hybrid_from_seed",
+      "enabled": true
+    },
+    {
+      "id": "cell_only_match",
+      "enabled": true
+    },
+    {
+      "id": "cell_cascade",
+      "enabled": true
+    },
+    {
+      "id": "cell_cascade_cfirst",
+      "enabled": true
+    },
+    {
+      "id": "design_pipeline",
+      "enabled": true
+    },
+    {
+      "id": "smart_explore",
+      "enabled": true
+    },
+    {
+      "id": "full_3el_legacy",
+      "enabled": true
+    },
+    {
+      "id": "speacial_seed",
+      "enabled": true
+    },
+    {
+      "id": "openems_validate",
+      "enabled": true
+    }
+  ],
+  "yagi": []
+}

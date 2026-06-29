@@ -1,0 +1,47 @@
+{
+  "engine_defs": [
+    "NecppEngine"
+  ],
+  "evaluate_sig": "elements, ant, engine, freqs",
+  "engine_ctor": "NecppEngine()",
+  "ant_ctor": "make_ant()",
+  "freqs_expr": "frange(F_START, F_STOP, F_STEP)",
+  "seed_keys": [
+    "type",
+    "center_freq_mhz",
+    "freq_start_mhz",
+    "freq_stop_mhz",
+    "xfrmr_position_in",
+    "de_position_in",
+    "coupler_position_in",
+    "xfrmr_spacing_in",
+    "coupler_spacing_in",
+    "xfrmr_length_in",
+    "de_length_in",
+    "coupler_length_in",
+    "elements",
+    "score",
+    "min_swr",
+    "max_swr",
+    "avg_swr",
+    "center_r",
+    "center_x",
+    "center_swr",
+    "center_rl_db",
+    "avg_r",
+    "avg_abs_x",
+    "points_under_1p5",
+    "points_under_2p0",
+    "real_gain_dbi",
+    "peak_elev_deg",
+    "nec_file"
+  ],
+  "seed_sample": {
+    "type": "cell_placement_tune",
+    "center_freq_mhz": 27.195,
+    "freq_start_mhz": 26.965,
+    "freq_stop_mhz": 27.405,
+    "xfrmr_position_in": 31.75,
+    "de_position_in": 59.75
+  }
+}

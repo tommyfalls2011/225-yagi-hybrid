@@ -1,0 +1,44 @@
+{
+  "type": "cell_placement_tune_coupler_first",
+  "center_freq_mhz": 27.195,
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "xfrmr_position_in": 32.0,
+  "de_position_in": 64.0,
+  "coupler_position_in": 85.75,
+  "xfrmr_spacing_in": 32.0,
+  "coupler_spacing_in": 21.75,
+  "xfrmr_length_in": 189.508549,
+  "de_length_in": 220.008549,
+  "coupler_length_in": 184.508549,
+  "elements": [
+    {
+      "name": "XFRMR",
+      "position_in": 32.0,
+      "length_in": 189.508549
+    },
+    {
+      "name": "DE",
+      "position_in": 64.0,
+      "length_in": 220.008549
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 85.75,
+      "length_in": 184.508549
+    }
+  ],
+  "score": 17519.85701426738,
+  "min_swr": 1.037871,
+  "max_swr": 1.14674,
+  "avg_swr": 1.077187,
+  "center_r": 51.993324141422406,
+  "center_x": -0.36495645871649823,
+  "center_swr": 1.040542340220655,
+  "center_rl_db": 34.03673593568955,
+  "avg_r": 51.998099,
+  "avg_abs_x": 2.995388,
+  "points_under_1p5": 45,
+  "points_under_2p0": 45,
+  "nec_file": "/home/sma-ububtu24/scripts/hybrid_auto7/models/learn_cell_cfirst_best_20260524_144318.nec"
+}

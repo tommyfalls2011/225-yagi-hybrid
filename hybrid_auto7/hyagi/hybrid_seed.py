@@ -1,0 +1,101 @@
+"""hybrid_auto7 — hybrid geometry seeder for a selectable element count.
+
+A hybrid always has REF + XFRMR + DE + COUPLER, plus 0..N directors.  The user
+picks how many directors, giving a total of (4 + N) elements.  This produces a
+sane wavelength-scaled starting geometry; the matcher then re-tunes lengths and
+the matching cell.  Director positions are seeded here and held by the matcher
+(which tunes director lengths), so the boom stays sensible.
+
+When `max_boom_in` is given, director spacings are COMPRESSED so the last
+director sits within that limit -- so a locked 22 ft boom is honoured at
+build time, never overrun.
+"""
+from __future__ import annotations
+
+
+def build_geometry(n_directors, center_mhz=27.195, max_boom_in=None, *,
+                   tune_to_fc=False, height_ft=22.0, rules=None, log_fn=None):
+    """Return {'elements': [...]} for a hybrid with n_directors directors.
+
+    n_directors clamps to 0..18.  If `max_boom_in` is set the director
+    spacings are uniformly scaled so the last director's position is <= that
+    value, with a 1" tip margin for the optimizer to wiggle within.
+
+    `tune_to_fc=True` adds a one-shot NEC2 calibration pass after the static
+    seed: sweeps DE length to find where the antenna actually resonates at
+    `center_mhz` (accounting for fat tubing + ground + grounding state).
+    The static 0.484*lambda formula was for thin wire in free space; on
+    0.625" tubing at 22-30 ft over real ground it produces antennas that
+    resonate ~1 MHz HIGH.  Calibrating against the real NEC model fixes
+    that so the seed geometry is already at fc on day one."""
+    n_directors = max(0, min(18, int(n_directors)))
+    wl = 11811.0 / float(center_mhz)          # free-space wavelength, inches
+
+    de_pos = round(0.108 * wl, 1)             # ~46.9" -> keep REF behind DE
+    de_len = round(0.484 * wl, 1)             # ~210"
+    elements = [
+        {"name": "REF",     "position_in": 0.0,
+         "length_in": round(0.503 * wl, 1)},
+        {"name": "XFRMR",   "position_in": round(de_pos - 6.0, 1),
+         "length_in": round(0.459 * wl, 1)},
+        {"name": "DE",      "position_in": de_pos,
+         "length_in": de_len},
+        {"name": "COUPLER", "position_in": round(de_pos + 28.0, 1),
+         "length_in": round(0.398 * wl, 1)},
+    ]
+    if n_directors == 0:
+        return {"elements": elements}
+
+    # Default freeband-style spacing.  d1 is the gap from DE to DIR1 (longer
+    # than between directors), then directors march out at uniform spacing.
+    d1_gap = 0.205 * wl
+    spacing = 0.180 * wl
+
+    # If the user locked the boom, compress the spacings so the last director
+    # lands at (boom - 1") (leaves ~1" of tip margin past the last director).
+    if max_boom_in is not None:
+        boom = float(max_boom_in) - 1.0
+        # Required reach from DE to last director.
+        needed = d1_gap + spacing * (n_directors - 1)
+        avail = boom - de_pos
+        if needed > avail and needed > 0:
+            scale = avail / needed
+            d1_gap *= scale
+            spacing *= scale
+        # Whatever the COUPLER position is, the directors start after it.
+        # _post-clamp_ keeps DIR1 strictly past the COUPLER.
+        coupler_pos = elements[3]["position_in"]
+        if de_pos + d1_gap <= coupler_pos:
+            d1_gap = max(d1_gap, (coupler_pos - de_pos) + 6.0)
+
+    d1 = round(de_pos + d1_gap, 1)
+    for k in range(1, n_directors + 1):
+        pos = round(d1 + spacing * (k - 1), 1)
+        length = round(max(0.405 * wl, 0.449 * wl - 0.009 * wl * (k - 1)), 1)
+        elements.append({"name": f"DIR{k}", "position_in": pos, "length_in": length})
+
+    # When the boom is LOCKED to an exact length, force REF at exactly 0 and
+    # the last director at exactly max_boom_in.  Middle elements are rescaled
+    # proportionally; the matcher will re-slide them on its first tune.
+    if max_boom_in is not None and n_directors > 0:
+        cap = float(max_boom_in)
+        last_pos = elements[-1]["position_in"]
+        if last_pos > 0:
+            for el in elements:
+                el["position_in"] = round(float(el["position_in"]) * cap / last_pos, 4)
+
+    # Calibrate DE length against NEC2 reality so the seed is actually
+    # resonant at fc (not the thin-wire 0.484*lambda approximation).  See
+    # hyagi.resonance.find_de_resonance for the search strategy.
+    if tune_to_fc:
+        try:
+            from . import resonance
+            elements = resonance.find_de_resonance(
+                elements, fc_mhz=float(center_mhz), height_ft=float(height_ft),
+                rules=rules, log_fn=log_fn,
+            )
+        except Exception as ex:
+            if log_fn:
+                log_fn(f"  [resonance] calibration skipped: {ex}")
+
+    return {"elements": elements}

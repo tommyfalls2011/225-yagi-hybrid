@@ -1,0 +1,88 @@
+{
+  "elements": {
+    "REF": {
+      "length_min_in": 190.0,
+      "length_max_in": 240.0,
+      "notes": "passive reflector behind DE"
+    },
+    "XFRMR": {
+      "length_min_in": 170.0,
+      "length_max_in": 235.0,
+      "notes": "impedance transformer between REF and DE.  Can be LONGER than DE to provide a low-side resonance dip for OWA wideband (empirically verified -- see scripts/hybrid_physics_findings.md)."
+    },
+    "DE": {
+      "length_min_in": 185.0,
+      "length_max_in": 225.0,
+      "notes": "driven element, feed point"
+    },
+    "COUPLER": {
+      "length_min_in": 150.0,
+      "length_max_in": 220.0,
+      "notes": "couples DE to director array; shorter than DE -> resonance ABOVE fc -> high-side dip in OWA wideband"
+    },
+    "DIR1": {
+      "length_min_in": 145.0,
+      "length_max_in": 210.0,
+      "notes": "first director"
+    },
+    "DIR2": {
+      "length_min_in": 145.0,
+      "length_max_in": 205.0,
+      "notes": ""
+    },
+    "DIR3": {
+      "length_min_in": 145.0,
+      "length_max_in": 200.0,
+      "notes": ""
+    },
+    "DIR4": {
+      "length_min_in": 145.0,
+      "length_max_in": 195.0,
+      "notes": ""
+    }
+  },
+  "spacings": {
+    "REF_DE": {
+      "min_in": 40.0,
+      "max_in": 80.0,
+      "sweet_in": ""
+    },
+    "XFRMR_DE": {
+      "min_in": 4.0,
+      "max_in": 32.0,
+      "sweet_in": "5.5-6.5  (operator-measured ~50 ohm match)"
+    },
+    "DE_COUPLER": {
+      "min_in": 4.0,
+      "max_in": 32.0,
+      "sweet_in": "12-23   (operator-measured, depends on DIRs)"
+    },
+    "COUPLER_DIR1": {
+      "min_in": 48.0,
+      "max_in": 85.0,
+      "sweet_in": ""
+    },
+    "DIR1_DIR2": {
+      "min_in": 40.0,
+      "max_in": 96.0,
+      "sweet_in": ""
+    },
+    "DIR2_DIR3": {
+      "min_in": 48.0,
+      "max_in": 120.0,
+      "sweet_in": ""
+    },
+    "DIR3_DIR4": {
+      "min_in": 48.0,
+      "max_in": 120.0,
+      "sweet_in": ""
+    }
+  },
+  "global": {
+    "freq_mhz_center": 27.195,
+    "freq_mhz_low": 26.665,
+    "freq_mhz_high": 27.855,
+    "max_boom_ft": 70.0,
+    "min_boom_ft": 8.0
+  }
+}

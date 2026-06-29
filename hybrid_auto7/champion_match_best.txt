@@ -1,0 +1,23 @@
+
+Best runs
+=========
+id=1563 stage=8_final_cell_position DEpos=48.000 Xsp=8.500 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.032 max=1.197 avg=1.102 RLmax=20.95dB <=1.5=45 <=2.0=45
+id=1145 stage=5_fine_spacing DEpos=47.000 Xsp=8.500 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.004 max=1.200 avg=1.098 RLmax=20.83dB <=1.5=45 <=2.0=45
+id=1564 stage=8_final_cell_position DEpos=49.000 Xsp=8.500 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.068 max=1.200 avg=1.118 RLmax=20.83dB <=1.5=45 <=2.0=45
+id=1127 stage=5_fine_spacing DEpos=47.000 Xsp=8.000 Csp=35.000 XL=199.000 CL=173.000 DE=210.000 min=1.016 max=1.201 avg=1.101 RLmax=20.77dB <=1.5=45 <=2.0=45
+id=1162 stage=5_fine_spacing DEpos=47.000 Xsp=9.000 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.016 max=1.202 avg=1.101 RLmax=20.76dB <=1.5=45 <=2.0=45
+id=1144 stage=5_fine_spacing DEpos=47.000 Xsp=8.500 Csp=35.000 XL=199.000 CL=173.000 DE=210.000 min=1.004 max=1.203 avg=1.098 RLmax=20.72dB <=1.5=45 <=2.0=45
+id=1180 stage=5_fine_spacing DEpos=47.000 Xsp=9.500 Csp=37.000 XL=199.000 CL=173.000 DE=210.000 min=1.036 max=1.204 avg=1.108 RLmax=20.67dB <=1.5=45 <=2.0=45
+id=1163 stage=5_fine_spacing DEpos=47.000 Xsp=9.000 Csp=37.000 XL=199.000 CL=173.000 DE=210.000 min=1.023 max=1.204 avg=1.103 RLmax=20.67dB <=1.5=45 <=2.0=45
+id=1128 stage=5_fine_spacing DEpos=47.000 Xsp=8.000 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.011 max=1.204 avg=1.100 RLmax=20.66dB <=1.5=45 <=2.0=45
+id=1161 stage=5_fine_spacing DEpos=47.000 Xsp=9.000 Csp=35.000 XL=199.000 CL=173.000 DE=210.000 min=1.011 max=1.205 avg=1.099 RLmax=20.65dB <=1.5=45 <=2.0=45
+id=1179 stage=5_fine_spacing DEpos=47.000 Xsp=9.500 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.030 max=1.205 avg=1.105 RLmax=20.64dB <=1.5=45 <=2.0=45
+id=1110 stage=5_fine_spacing DEpos=47.000 Xsp=7.500 Csp=35.000 XL=199.000 CL=173.000 DE=210.000 min=1.030 max=1.206 avg=1.106 RLmax=20.61dB <=1.5=45 <=2.0=45
+id=1109 stage=5_fine_spacing DEpos=47.000 Xsp=7.500 Csp=34.000 XL=199.000 CL=173.000 DE=210.000 min=1.036 max=1.206 avg=1.108 RLmax=20.60dB <=1.5=45 <=2.0=45
+id=1126 stage=5_fine_spacing DEpos=47.000 Xsp=8.000 Csp=34.000 XL=199.000 CL=173.000 DE=210.000 min=1.022 max=1.206 avg=1.102 RLmax=20.60dB <=1.5=45 <=2.0=45
+id=1146 stage=5_fine_spacing DEpos=47.000 Xsp=8.500 Csp=37.000 XL=199.000 CL=173.000 DE=210.000 min=1.010 max=1.206 avg=1.100 RLmax=20.59dB <=1.5=45 <=2.0=45
+id=1143 stage=5_fine_spacing DEpos=47.000 Xsp=8.500 Csp=34.000 XL=199.000 CL=173.000 DE=210.000 min=1.008 max=1.207 avg=1.098 RLmax=20.57dB <=1.5=45 <=2.0=45
+id=1178 stage=5_fine_spacing DEpos=47.000 Xsp=9.500 Csp=35.000 XL=199.000 CL=173.000 DE=210.000 min=1.023 max=1.207 avg=1.103 RLmax=20.56dB <=1.5=45 <=2.0=45
+id=1197 stage=5_fine_spacing DEpos=47.000 Xsp=10.000 Csp=37.000 XL=199.000 CL=173.000 DE=210.000 min=1.049 max=1.207 avg=1.115 RLmax=20.55dB <=1.5=45 <=2.0=45
+id=1379 stage=6_fine_xl_cl DEpos=47.000 Xsp=8.500 Csp=36.000 XL=199.000 CL=174.000 DE=210.000 min=1.002 max=1.208 avg=1.097 RLmax=20.53dB <=1.5=45 <=2.0=45
+id=1565 stage=8_final_cell_position DEpos=50.000 Xsp=8.500 Csp=36.000 XL=199.000 CL=173.000 DE=210.000 min=1.105 max=1.208 avg=1.141 RLmax=20.53dB <=1.5=45 <=2.0=45

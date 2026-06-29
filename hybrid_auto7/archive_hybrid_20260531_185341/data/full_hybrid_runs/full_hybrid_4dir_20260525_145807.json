@@ -1,0 +1,64 @@
+{
+  "type": "full_hybrid_from_cell_seed",
+  "center_freq_mhz": 27.195,
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "n_elements": 8,
+  "n_directors": 4,
+  "priority": "balanced",
+  "cell_seed_path": "/home/sma-ububtu24/scripts/hybrid_auto7/data/cell_learning_runs/best_cell_seed.json",
+  "elements": [
+    {
+      "name": "REF",
+      "position_in": 0.0,
+      "length_in": 231.53397644999998
+    },
+    {
+      "name": "XFRMR",
+      "position_in": 31.75,
+      "length_in": 194.508549
+    },
+    {
+      "name": "DE",
+      "position_in": 59.75,
+      "length_in": 220.508549
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 84.5,
+      "length_in": 178.508549
+    },
+    {
+      "name": "DIR1",
+      "position_in": 102.5,
+      "length_in": 176.50854936569223
+    },
+    {
+      "name": "DIR2",
+      "position_in": 132.5,
+      "length_in": 174.50854936569223
+    },
+    {
+      "name": "DIR3",
+      "position_in": 222.5,
+      "length_in": 172.50854936569223
+    },
+    {
+      "name": "DIR4",
+      "position_in": 270.5,
+      "length_in": 170.50854936569223
+    }
+  ],
+  "score": 19797.372040785565,
+  "min_swr": 1.331968,
+  "max_swr": 1.500376,
+  "avg_swr": 1.41907,
+  "center_r": 70.59892930947008,
+  "center_x": 2.9080514087744973,
+  "center_swr": 1.416768954564385,
+  "center_rl_db": 15.266795457024962,
+  "real_gain_dbi": null,
+  "peak_elev_deg": null,
+  "front_back_db": null,
+  "nec_file": "/home/sma-ububtu24/scripts/hybrid_auto7/models/full_hybrid_4dir_20260525_145807.nec"
+}

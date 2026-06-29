@@ -1,0 +1,416 @@
+./web_app.py:34:from hyagi.paths import BACKUPS_DIR, DATA_DIR, DB_PATH, LOGS_DIR, MODELS_DIR, PROJECT_DIR
+./web_app.py:196:        st.write(f"DE position: {run_row['de_position_in']:.3f} in from REF")
+./web_app.py:197:        st.write(f"XFRMR-DE spacing: {run_row['xfrmr_spacing_in']:.3f} in")
+./web_app.py:198:        st.write(f"DE-Coupler spacing: {run_row['coupler_spacing_in']:.3f} in")
+./web_app.py:199:        st.write(f"XFRMR length: {run_row['xfrmr_length_in']:.3f} in")
+./web_app.py:200:        st.write(f"Coupler length: {run_row['coupler_length_in']:.3f} in")
+./web_app.py:201:        st.write(f"DE length: {run_row['de_length_in']:.3f} in")
+./web_app.py:277:st.caption("Local web UI for your hybrid antenna tuning engine")
+./web_app.py:294:    st.write(f"Models dir: `{MODELS_DIR}`")
+./web_app.py:314:            mode = st.selectbox("Mode", ["hybrid", "yagi"], index=0 if default_cfg.mode == "hybrid" else 1)
+./web_app.py:317:            tuning_choices = ["legacy_hybrid", "wide_cell_owa", "cell_then_directors_repeat"]
+./web_app.py:318:            current_tuning = getattr(default_cfg, "tuning_procedure", "legacy_hybrid")
+./web_app.py:319:            if current_tuning not in tuning_choices:
+./web_app.py:320:                current_tuning = "legacy_hybrid"
+./web_app.py:321:            tuning_procedure = st.selectbox(
+./web_app.py:323:                tuning_choices,
+./web_app.py:324:                index=tuning_choices.index(current_tuning),
+./web_app.py:400:                tuning_procedure=tuning_procedure,
+./web_app.py:502:            st.subheader("Project director tuning")
+./web_app.py:514:                                title=f"{selected_director} tuning progress",
+./web_app.py:526:                        run_with_live_log(tune_dir1, level, title="DIR1 tuning progress")
+./web_app.py:533:                        run_with_live_log(tune_dir2, base_run_id, level, title="DIR2 tuning progress")
+./web_app.py:540:                        run_with_live_log(tune_dir3, base_run_id, level, title="DIR3 tuning progress")
+./web_app.py:591:                    "rear_gain_dbi": pat.rear_gain_dbi,
+./web_app.py:617:                "rear_gain_dbi": pat.rear_gain_dbi,
+./web_app.py:688:        st.write("Learns the XFRMR-DE-COUPLER cell by itself first.")
+./web_app.py:732:        st.write("Runs the older full 3-element hybrid learning procedure.")
+./web_app.py:736:                    ["python3", "-u", "./learn_3el_hybrid.py"],
+./hyagi/tuner.py:13:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/tuner.py:26:        xfrmr_spacing_in=float(row["xfrmr_spacing_in"]),
+./hyagi/tuner.py:27:        coupler_spacing_in=float(row["coupler_spacing_in"]),
+./hyagi/tuner.py:28:        xfrmr_length_in=float(row["xfrmr_length_in"]),
+./hyagi/tuner.py:29:        coupler_length_in=float(row["coupler_length_in"]),
+./hyagi/tuner.py:47:    print(f"DE position:     {fmt(row['de_position_in'])} in from REF")
+./hyagi/tuner.py:48:    print(f"XFRMR spacing:   {fmt(row['xfrmr_spacing_in'])} in")
+./hyagi/tuner.py:49:    print(f"Coupler spacing: {fmt(row['coupler_spacing_in'])} in")
+./hyagi/tuner.py:50:    print(f"XFRMR length:    {fmt(row['xfrmr_length_in'])} in")
+./hyagi/tuner.py:51:    print(f"Coupler length:  {fmt(row['coupler_length_in'])} in")
+./hyagi/tuner.py:52:    print(f"DE length:       {fmt(row['de_length_in'])} in")
+./hyagi/tuner.py:146:        nec_file = MODELS_DIR / f"{key}.nec"
+./hyagi/tuner.py:199:                xfrmr_spacing_in=vals[1],
+./hyagi/tuner.py:200:                coupler_spacing_in=vals[2],
+./hyagi/tuner.py:201:                xfrmr_length_in=vals[3],
+./hyagi/tuner.py:202:                coupler_length_in=vals[4],
+./hyagi/tuner.py:221:                    f"DEpos={b['de_position_in']:.1f} "
+./hyagi/tuner.py:222:                    f"Xsp={b['xfrmr_spacing_in']:.1f} "
+./hyagi/tuner.py:223:                    f"Csp={b['coupler_spacing_in']:.1f}"
+./hyagi/tuner.py:235:        bx = float(best["xfrmr_spacing_in"])
+./hyagi/tuner.py:236:        bc = float(best["coupler_spacing_in"])
+./hyagi/tuner.py:253:        print("Best spacing landed on sweep edge. Expanding spacing search.")
+./hyagi/tuner.py:290:        # Stage 1: coarse xfrmr/coupler spacing
+./hyagi/tuner.py:304:        # Stage 2: move matching cell
+./hyagi/tuner.py:308:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:309:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:316:        # Stage 3: broad XFRMR/Coupler length sweep
+./hyagi/tuner.py:320:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:321:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:328:        # Stage 4: broad DE length sweep
+./hyagi/tuner.py:332:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:333:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:334:            (d.xfrmr_length_in, d.xfrmr_length_in, 1),
+./hyagi/tuner.py:335:            (d.coupler_length_in, d.coupler_length_in, 1),
+./hyagi/tuner.py:347:            clamp_range(d.xfrmr_spacing_in, 2, 45, hx, sx),
+./hyagi/tuner.py:348:            clamp_range(d.coupler_spacing_in, 4, 80, hc, sc),
+./hyagi/tuner.py:349:            (d.xfrmr_length_in, d.xfrmr_length_in, 1),
+./hyagi/tuner.py:350:            (d.coupler_length_in, d.coupler_length_in, 1),
+./hyagi/tuner.py:361:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:362:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:363:            clamp_range(d.xfrmr_length_in, 140, 270, hl, sl),
+./hyagi/tuner.py:364:            clamp_range(d.coupler_length_in, 130, 260, hl, sl),
+./hyagi/tuner.py:369:        # Stage 7: fine DE length
+./hyagi/tuner.py:375:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:376:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:377:            (d.xfrmr_length_in, d.xfrmr_length_in, 1),
+./hyagi/tuner.py:378:            (d.coupler_length_in, d.coupler_length_in, 1),
+./hyagi/tuner.py:389:            (d.xfrmr_spacing_in, d.xfrmr_spacing_in, 1),
+./hyagi/tuner.py:390:            (d.coupler_spacing_in, d.coupler_spacing_in, 1),
+./hyagi/tuner.py:391:            (d.xfrmr_length_in, d.xfrmr_length_in, 1),
+./hyagi/tuner.py:392:            (d.coupler_length_in, d.coupler_length_in, 1),
+./hyagi/tuner.py:400:            print("RESULT: Entire CB sweep is under 2.0:1 SWR.")
+./hyagi/tuner.py:403:            print("RESULT: Best found is still not under 2.0:1 over the whole CB sweep.")
+./hyagi/config.py:5:ELEMENT_ORDER = [
+./hyagi/config.py:8:    "DE",
+./hyagi/config.py:18:    "DE": 203.0,
+./hyagi/config.py:27:    "DE": 61.0,
+./hyagi/config.py:59:    xfrmr_spacing_in: float = 12.0
+./hyagi/config.py:60:    coupler_spacing_in: float = 12.0
+./hyagi/config.py:61:    xfrmr_length_in: float = 209.0
+./hyagi/config.py:62:    coupler_length_in: float = 197.0
+./hyagi/db.py:56:            xfrmr_spacing_in REAL NOT NULL,
+./hyagi/db.py:57:            coupler_spacing_in REAL NOT NULL,
+./hyagi/db.py:58:            xfrmr_length_in REAL NOT NULL,
+./hyagi/db.py:59:            coupler_length_in REAL NOT NULL,
+./hyagi/db.py:100:            FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+./hyagi/db.py:112:            FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+./hyagi/db.py:143:    cur.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+./hyagi/db.py:144:    cur.execute("CREATE INDEX IF NOT EXISTS idx_runs_stage ON runs(stage)")
+./hyagi/db.py:145:    cur.execute("CREATE INDEX IF NOT EXISTS idx_elements_run_id ON elements(run_id)")
+./hyagi/db.py:146:    cur.execute("CREATE INDEX IF NOT EXISTS idx_freq_results_run_id ON freq_results(run_id)")
+./hyagi/db.py:147:    cur.execute("CREATE INDEX IF NOT EXISTS idx_freq_results_run_freq ON freq_results(run_id, freq_mhz)")
+./hyagi/db.py:148:    cur.execute("CREATE INDEX IF NOT EXISTS idx_move_history_project ON move_history(project_name)")
+./hyagi/db.py:149:    cur.execute("CREATE INDEX IF NOT EXISTS idx_move_history_stage ON move_history(stage)")
+./hyagi/db.py:189:                xfrmr_spacing_in,
+./hyagi/db.py:190:                coupler_spacing_in,
+./hyagi/db.py:191:                xfrmr_length_in,
+./hyagi/db.py:192:                coupler_length_in,
+./hyagi/db.py:228:            design.xfrmr_spacing_in,
+./hyagi/db.py:229:            design.coupler_spacing_in,
+./hyagi/db.py:230:            design.xfrmr_length_in,
+./hyagi/db.py:231:            design.coupler_length_in,
+./hyagi/db.py:348:            ORDER BY
+./hyagi/db.py:349:                points_under_2p0 DESC,
+./hyagi/db.py:350:                points_under_1p5 DESC,
+./hyagi/db.py:366:            ORDER BY
+./hyagi/db.py:367:                points_under_2p0 DESC,
+./hyagi/db.py:368:                points_under_1p5 DESC,
+./hyagi/db.py:384:            ORDER BY position_in ASC
+./hyagi/db.py:396:            ORDER BY freq_mhz ASC
+./hyagi/model.py:4:    ELEMENT_ORDER,
+./hyagi/model.py:61:        f"xsp{design.xfrmr_spacing_in:.3f}",
+./hyagi/model.py:62:        f"csp{design.coupler_spacing_in:.3f}",
+./hyagi/model.py:63:        f"xl{design.xfrmr_length_in:.3f}",
+./hyagi/model.py:64:        f"cl{design.coupler_length_in:.3f}",
+./hyagi/model.py:95:    positions["DE"] = design.de_position_in
+./hyagi/model.py:96:    positions["XFRMR"] = design.de_position_in - design.xfrmr_spacing_in
+./hyagi/model.py:97:    positions["COUPLER"] = design.de_position_in + design.coupler_spacing_in
+./hyagi/model.py:99:    lengths["XFRMR"] = design.xfrmr_length_in
+./hyagi/model.py:100:    lengths["COUPLER"] = design.coupler_length_in
+./hyagi/model.py:101:    lengths["DE"] = design.de_length_in
+./hyagi/model.py:131:    for name in ELEMENT_ORDER:
+./hyagi/model.py:146:    Validate arbitrary hybrid element lists.
+./hyagi/model.py:151:        DE
+./hyagi/model.py:162:    for required in ["REF", "XFRMR", "DE", "COUPLER"]:
+./hyagi/model.py:197:    Feed is placed on center segment of DE center wire.
+./hyagi/model.py:208:    feed_tag = None
+./hyagi/model.py:209:    feed_seg = None
+./hyagi/model.py:235:            if e.name == "DE":
+./hyagi/model.py:236:                feed_tag = tag
+./hyagi/model.py:237:                feed_seg = (segs + 1) // 2
+./hyagi/model.py:278:        if e.name == "DE":
+./hyagi/model.py:279:            feed_tag = center_tag
+./hyagi/model.py:280:            feed_seg = (center_segs + 1) // 2
+./hyagi/model.py:301:    if feed_tag is None or feed_seg is None:
+./hyagi/model.py:302:        raise ValueError("Could not find DE feed tag/segment")
+./hyagi/model.py:304:    return wires, feed_tag, feed_seg
+./hyagi/model.py:308:    wires, feed_tag, feed_seg = build_wires(elements, ant)
+./hyagi/model.py:314:        f"CM hybrid_auto7 tapered antenna model with {len(elements)} elements",
+./hyagi/model.py:338:    lines.append(f"EX 0 {feed_tag:d} {feed_seg:d} 0 1.0 0.0")
+./hyagi/engine.py:69:            wires, feed_tag, feed_seg = build_wires(elements, ant)
+./hyagi/engine.py:94:                int(feed_tag),
+./hyagi/engine.py:95:                int(feed_seg),
+./hyagi/project_cell_tuner.py:10:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/project_cell_tuner.py:51:    out = override_element(out, "DE", position=de_pos)
+./hyagi/project_cell_tuner.py:99:    for name in ("XFRMR", "DE", "COUPLER"):
+./hyagi/project_cell_tuner.py:117:    de = find_element(elements, "DE")
+./hyagi/project_cell_tuner.py:132:    print("Stage 0: DE seed exploration (3ft to 6ft from REF)")
+./hyagi/project_cell_tuner.py:133:    print("Trying DE seeds with XFRMR=13in behind and COUPLER=13in ahead")
+./hyagi/project_cell_tuner.py:143:                f"Seed DE={de_pos:.1f} in "
+./hyagi/project_cell_tuner.py:155:            print(f"FAILED seed DE={de_pos:.1f}: {exc}")
+./hyagi/project_cell_tuner.py:160:def tune_project_cell(project_name, level="quick", procedure="legacy_hybrid", repeat_pass=False):
+./hyagi/project_cell_tuner.py:163:    if cfg.mode != "hybrid":
+./hyagi/project_cell_tuner.py:164:        raise NotImplementedError("Project cell tuner currently supports hybrid mode only.")
+./hyagi/project_cell_tuner.py:248:    print("Project cell tuner (match-only mode)")
+./hyagi/project_cell_tuner.py:301:        print("Stage 3: DE position only")
+./hyagi/project_cell_tuner.py:304:                maybe_update(override_element(best_elements, "DE", position=dp))
+./hyagi/project_cell_tuner.py:328:        print("Stage 6: DE length")
+./hyagi/project_cell_tuner.py:331:                maybe_update(override_element(best_elements, "DE", length=dl))
+./hyagi/project_cell_tuner.py:365:            print("Stage 10: repeat DE position only")
+./hyagi/project_cell_tuner.py:368:                    maybe_update(override_element(best_elements, "DE", position=dp))
+./hyagi/project_cell_tuner.py:392:            print("Stage 13: repeat DE length")
+./hyagi/project_cell_tuner.py:395:                    maybe_update(override_element(best_elements, "DE", length=dl))
+./hyagi/project_cell_tuner.py:430:    nec_file = MODELS_DIR / f"project_{_safe_name(project_name)}_{suffix}.nec"
+./hyagi/project_cell_tuner.py:446:    print(f"DE position:         {de.position_in:.3f} in")
+./hyagi/project_cell_tuner.py:448:    print(f"XFRMR-DE spacing:    {xsp:.3f} in")
+./hyagi/project_cell_tuner.py:449:    print(f"DE-COUPLER spacing:  {csp:.3f} in")
+./hyagi/project_cell_tuner.py:451:    print(f"DE length:           {de.length_in:.3f} in")
+./hyagi/project_cell_tuner.py:467:        "xfrmr_position_in": x.position_in,
+./hyagi/project_cell_tuner.py:469:        "coupler_position_in": c.position_in,
+./hyagi/project_cell_tuner.py:470:        "xfrmr_spacing_in": xsp,
+./hyagi/project_cell_tuner.py:471:        "coupler_spacing_in": csp,
+./hyagi/project_cell_tuner.py:472:        "xfrmr_length_in": x.length_in,
+./hyagi/project_cell_tuner.py:474:        "coupler_length_in": c.length_in,
+./hyagi/dynamic.py:9:    "DE": 210.0,
+./hyagi/dynamic.py:32:def roles_for(element_count, mode="hybrid"):
+./hyagi/dynamic.py:34:    Generate roles for supported antenna modes.
+./hyagi/dynamic.py:37:        REF + DE + directors
+./hyagi/dynamic.py:39:    hybrid:
+./hyagi/dynamic.py:40:        adds XFRMR behind DE and COUPLER ahead of DE
+./hyagi/dynamic.py:44:        standard REF + DE + directors
+./hyagi/dynamic.py:51:    if mode == "hybrid":
+./hyagi/dynamic.py:52:        roles = ["REF", "XFRMR", "DE", "COUPLER"]
+./hyagi/dynamic.py:56:        roles = ["REF", "DE"]
+./hyagi/dynamic.py:60:        raise ValueError("mode must be 'hybrid' or 'yagi'")
+./hyagi/dynamic.py:107:    This is not yet optimized. It is the seed geometry for the future generalized tuner.
+./hyagi/dynamic.py:117:    # Use a small rear margin for REF = 0.
+./hyagi/dynamic.py:120:    if mode == "hybrid":
+./hyagi/dynamic.py:122:        # For other boom lengths, keep cell near rear and spread directors to the remaining boom.
+./hyagi/dynamic.py:130:            "DE": de_pos,
+./hyagi/dynamic.py:137:        # Start directors after coupler. Leave a little end margin.
+./hyagi/dynamic.py:170:        # REF at 0, DE around 0.18 wavelength/boom region, directors spread forward.
+./hyagi/dynamic.py:175:            "DE": de_pos,
+./hyagi/dynamic.py:202:            # Standard yagi DE should start near regular DE length.
+./hyagi/dynamic.py:203:            if role == "DE":
+./hyagi/dynamic.py:232:    print(f"Roles for {element_count}-element {mode} antenna")
+./hyagi/design.py:12:    print("DESIGN PROJECT")
+./hyagi/design.py:16:    if cfg.mode != "hybrid":
+./hyagi/design.py:17:        raise NotImplementedError("Only hybrid mode is active right now.")
+./hyagi/design.py:45:    print("Selected tuning procedure")
+./hyagi/design.py:47:    print(cfg.tuning_procedure)
+./hyagi/design.py:50:    print(f"Running tuning workflow at level: {level}")
+./hyagi/design.py:56:        procedure=cfg.tuning_procedure,
+./hyagi/design.py:64:    if cfg.tuning_procedure == "cell_then_directors_repeat" and director_roles:
+./hyagi/design.py:65:        coupler = cfg.element_overrides.get("COUPLER")
+./hyagi/design.py:66:        if coupler and "position_in" in coupler:
+./hyagi/design.py:67:            dir1_seed_pos = float(coupler["position_in"]) + 36.0
+./hyagi/design.py:74:            print(f"DIR1 seeded to {dir1_seed_pos:.3f} in (3 ft ahead of coupler) before director tuning.")
+./hyagi/design.py:80:        print(f"Now tuning {director} ...")
+./hyagi/design.py:90:    if cfg.tuning_procedure == "cell_then_directors_repeat":
+./hyagi/design.py:92:        print("Repeating cell tuning with directors left in place ...")
+./hyagi/dynamic_sim.py:7:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/dynamic_sim.py:79:    nec_file = MODELS_DIR / f"project_{_safe_name(cfg.name)}_start.nec"
+./hyagi/dynamic_sim.py:104:    print("Temporarily disabled in live tuning path")
+./hyagi/project_director_tuner.py:10:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/project_director_tuner.py:131:    print("Project director tuner (match-only mode)")
+./hyagi/project_director_tuner.py:208:    nec_file = MODELS_DIR / f"project_{_safe_name(project_name)}_{director_name}_best.nec"
+./hyagi/paths.py:6:MODELS_DIR = PROJECT_DIR / "models"
+./hyagi/paths.py:14:    for p in [DATA_DIR, MODELS_DIR, LOGS_DIR, BACKUPS_DIR]:
+./hyagi/paths.py:25:    print(f"MODELS_DIR:  {MODELS_DIR}")
+./hyagi/__init__.py:2:hybrid_auto7 clean automatic antenna tuner.
+./hyagi/dir3_tuner.py:7:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/dir3_tuner.py:32:        xfrmr_spacing_in=float(row["xfrmr_spacing_in"]),
+./hyagi/dir3_tuner.py:33:        coupler_spacing_in=float(row["coupler_spacing_in"]),
+./hyagi/dir3_tuner.py:34:        xfrmr_length_in=float(row["xfrmr_length_in"]),
+./hyagi/dir3_tuner.py:35:        coupler_length_in=float(row["coupler_length_in"]),
+./hyagi/dir3_tuner.py:83:    # Preserve excellent match
+./hyagi/dir3_tuner.py:166:    nec_file = MODELS_DIR / f"{key}.nec"
+./hyagi/dir2_tuner.py:7:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/dir2_tuner.py:32:        xfrmr_spacing_in=float(row["xfrmr_spacing_in"]),
+./hyagi/dir2_tuner.py:33:        coupler_spacing_in=float(row["coupler_spacing_in"]),
+./hyagi/dir2_tuner.py:34:        xfrmr_length_in=float(row["xfrmr_length_in"]),
+./hyagi/dir2_tuner.py:35:        coupler_length_in=float(row["coupler_length_in"]),
+./hyagi/dir2_tuner.py:171:    nec_file = MODELS_DIR / f"{key}.nec"
+./hyagi/pattern.py:9:from .paths import MODELS_DIR
+./hyagi/pattern.py:17:    rear_gain_dbi: float
+./hyagi/pattern.py:27:        xfrmr_spacing_in=float(row["xfrmr_spacing_in"]),
+./hyagi/pattern.py:28:        coupler_spacing_in=float(row["coupler_spacing_in"]),
+./hyagi/pattern.py:29:        xfrmr_length_in=float(row["xfrmr_length_in"]),
+./hyagi/pattern.py:30:        coupler_length_in=float(row["coupler_length_in"]),
+./hyagi/pattern.py:89:    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+./hyagi/pattern.py:92:    nec_path = MODELS_DIR / f"{tag}_{uid}.nec"
+./hyagi/pattern.py:93:    out_path = MODELS_DIR / f"{tag}_{uid}.out"
+./hyagi/pattern.py:105:            f"STDERR:\n{proc.stderr}"
+./hyagi/pattern.py:202:    rear_idx = 270
+./hyagi/pattern.py:205:    rear_gain = float(gains[rear_idx])
+./hyagi/pattern.py:206:    front_back = float(forward_gain - rear_gain)
+./hyagi/pattern.py:220:        rear_gain_dbi=rear_gain,
+./hyagi/project.py:15:    mode: str = "hybrid"
+./hyagi/project.py:17:    tuning_procedure: str = "legacy_hybrid"
+./hyagi/project.py:62:    if cfg.mode not in ("hybrid", "yagi"):
+./hyagi/project.py:63:        raise ValueError("mode must be 'hybrid' or 'yagi'")
+./hyagi/project.py:65:    if cfg.tuning_procedure not in ("legacy_hybrid", "wide_cell_owa", "cell_then_directors_repeat"):
+./hyagi/project.py:66:        raise ValueError("invalid tuning_procedure")
+./hyagi/project.py:154:    data.setdefault("tuning_procedure", "legacy_hybrid")
+./hyagi/project.py:180:            data.setdefault("tuning_procedure", "legacy_hybrid")
+./hyagi/project.py:206:    print(f"Tuning procedure:     {cfg.tuning_procedure}")
+./hyagi/report.py:95:    lines.append(f"ANTENNA DESIGN REPORT")
+./hyagi/report.py:102:    lines.append(f"Tuning procedure:     {cfg.tuning_procedure}")
+./hyagi/report.py:134:        lines.append(f"Rear gain:            {pat.rear_gain_dbi:.3f} dBi")
+./hyagi/report.py:206:            <tr><td>Rear gain</td><td>{pat.rear_gain_dbi:.3f} dBi</td></tr>
+./hyagi/report.py:265:<tr><td>Tuning procedure</td><td>{esc(cfg.tuning_procedure)}</td></tr>
+./hyagi/dir1_tuner.py:8:from .paths import MODELS_DIR, ensure_dirs
+./hyagi/dir1_tuner.py:16:        xfrmr_spacing_in=float(row["xfrmr_spacing_in"]),
+./hyagi/dir1_tuner.py:17:        coupler_spacing_in=float(row["coupler_spacing_in"]),
+./hyagi/dir1_tuner.py:18:        xfrmr_length_in=float(row["xfrmr_length_in"]),
+./hyagi/dir1_tuner.py:19:        coupler_length_in=float(row["coupler_length_in"]),
+./hyagi/dir1_tuner.py:100:    nec_file = MODELS_DIR / f"{key}.nec"
+./hyagi/cli.py:13:        description="hybrid_auto7 clean automatic 7-element antenna tuner"
+./hyagi/cli.py:49:    p = sub.add_parser("tune-dir1", help="sweep DIR1 position/length for gain while protecting SWR")
+./hyagi/cli.py:59:    p = sub.add_parser("tune-dir2", help="sweep DIR2 position/length for gain while protecting SWR")
+./hyagi/cli.py:65:    p = sub.add_parser("tune-dir3", help="sweep DIR3 position/length for gain while protecting SWR")
+./hyagi/cli.py:78:    p = sub.add_parser("new-project", help="create a user antenna project")
+./hyagi/cli.py:81:    p.add_argument("--mode", choices=["hybrid"], default="hybrid")
+./hyagi/cli.py:109:    p = sub.add_parser("roles", help="show dynamic roles for 3-12 element antenna")
+./hyagi/cli.py:111:    p.add_argument("--mode", choices=["hybrid"], default="hybrid")
+./hyagi/cli.py:153:    print("hybrid_auto7 is installed and running")
+./hyagi/cli.py:173:    print(f"DE position:        {r['de_position_in']:.3f} in from REF")
+./hyagi/cli.py:174:    print(f"XFRMR-DE spacing:   {r['xfrmr_spacing_in']:.3f} in")
+./hyagi/cli.py:175:    print(f"DE-Coupler spacing: {r['coupler_spacing_in']:.3f} in")
+./hyagi/cli.py:176:    print(f"XFRMR length:       {r['xfrmr_length_in']:.3f} in")
+./hyagi/cli.py:177:    print(f"Coupler length:     {r['coupler_length_in']:.3f} in")
+./hyagi/cli.py:178:    print(f"DE length:          {r['de_length_in']:.3f} in")
+./hyagi/cli.py:230:    wires, feed_tag, feed_seg = build_wires(elements, ant)
+./hyagi/cli.py:236:    print(f"Feed tag: {feed_tag}")
+./hyagi/cli.py:237:    print(f"Feed seg: {feed_seg}")
+./hyagi/cli.py:282:    from .paths import MODELS_DIR, ensure_dirs
+./hyagi/cli.py:306:    nec_file = MODELS_DIR / f"{key}.nec"
+./hyagi/cli.py:370:            f"DEpos={r['de_position_in']:.3f} "
+./hyagi/cli.py:371:            f"Xsp={r['xfrmr_spacing_in']:.3f} "
+./hyagi/cli.py:372:            f"Csp={r['coupler_spacing_in']:.3f} "
+./hyagi/cli.py:373:            f"XL={r['xfrmr_length_in']:.3f} "
+./hyagi/cli.py:374:            f"CL={r['coupler_length_in']:.3f} "
+./hyagi/cli.py:375:            f"DE={r['de_length_in']:.3f} "
+./hyagi/cli.py:445:    print(f"DE position:         {row['de_position_in']:.3f} in")
+./hyagi/cli.py:446:    print(f"XFRMR-DE spacing:    {row['xfrmr_spacing_in']:.3f} in")
+./hyagi/cli.py:447:    print(f"DE-Coupler spacing:  {row['coupler_spacing_in']:.3f} in")
+./hyagi/cli.py:448:    print(f"XFRMR length:        {row['xfrmr_length_in']:.3f} in")
+./hyagi/cli.py:449:    print(f"Coupler length:      {row['coupler_length_in']:.3f} in")
+./hyagi/cli.py:450:    print(f"DE length:           {row['de_length_in']:.3f} in")
+./hyagi/cli.py:455:    print(f"Rear gain -Y:        {pat.rear_gain_dbi:.3f} dBi")
+./learn_cell_only.py:11:from hyagi.paths import MODELS_DIR, DATA_DIR, ensure_dirs
+./learn_cell_only.py:22:DE_BASE_IN = 5616.0 / CENTER_FREQ_MHZ  # approximate full dipole length
+./learn_cell_only.py:24:DE_SEEDS = [36.0, 42.0, 48.0, 54.0, 60.0, 66.0, 72.0]
+./learn_cell_only.py:68:        if e.name == "DE":
+./learn_cell_only.py:79:        Element("XFRMR", de_pos - xsp, DE_BASE_IN + 2.0),
+./learn_cell_only.py:80:        Element("DE", de_pos, DE_BASE_IN),
+./learn_cell_only.py:81:        Element("COUPLER", de_pos + csp, DE_BASE_IN - 10.0),
+./learn_cell_only.py:103:    for required in ["XFRMR", "DE", "COUPLER"]:
+./learn_cell_only.py:182:def sweep_single(elements, ant, engine, freqs, generation, stage, move_name, values, applier, log_rows, print_every=5):
+./learn_cell_only.py:227:    de = find_element(elements, "DE")
+./learn_cell_only.py:234:    elements, best_eval = sweep_single(
+./learn_cell_only.py:237:        lambda els, v: set_cell(els, find_element(els, "DE").position_in, v, find_element(els, "COUPLER").position_in - find_element(els, "DE").position_in),
+./learn_cell_only.py:242:    de = find_element(elements, "DE")
+./learn_cell_only.py:249:    elements, best_eval = sweep_single(
+./learn_cell_only.py:252:        lambda els, v: set_cell(els, find_element(els, "DE").position_in, find_element(els, "DE").position_in - find_element(els, "XFRMR").position_in, v),
+./learn_cell_only.py:256:    # 3) DE position only
+./learn_cell_only.py:257:    de = find_element(elements, "DE")
+./learn_cell_only.py:259:    elements, best_eval = sweep_single(
+./learn_cell_only.py:262:        lambda els, v: set_element(els, "DE", position=v),
+./learn_cell_only.py:269:    elements, best_eval = sweep_single(
+./learn_cell_only.py:279:    elements, best_eval = sweep_single(
+./learn_cell_only.py:286:    # 6) DE length
+./learn_cell_only.py:287:    de = find_element(elements, "DE")
+./learn_cell_only.py:289:    elements, best_eval = sweep_single(
+./learn_cell_only.py:292:        lambda els, v: set_element(els, "DE", length=v),
+./learn_cell_only.py:297:    de = find_element(elements, "DE")
+./learn_cell_only.py:304:    elements, best_eval = sweep_single(
+./learn_cell_only.py:320:    nec_path = MODELS_DIR / f"learn_cell_best_{tag}.nec"
+./learn_cell_only.py:421:    for de_seed in DE_SEEDS:
+./learn_cell_only.py:425:                log(f"Testing seed: DE={de_seed:.1f} xsp={xsp_seed:.1f} csp={csp_seed:.1f}")
+./learn_3el_hybrid.py:13:from hyagi.paths import MODELS_DIR, DATA_DIR, ensure_dirs
+./learn_3el_hybrid.py:24:DE_BASE_IN = 5616.0 / CENTER_FREQ_MHZ  # approx full dipole length in inches
+./learn_3el_hybrid.py:27:DE_SEEDS = [36.0, 42.0, 48.0, 54.0, 60.0, 66.0, 72.0]  # 3ft to 6ft from REF
+./learn_3el_hybrid.py:34:# REF = 4', 3', 2' longer than DE and 1', 2', 3' shorter than DE
+./learn_3el_hybrid.py:36:    DE_BASE_IN + 48.0,
+./learn_3el_hybrid.py:37:    DE_BASE_IN + 36.0,
+./learn_3el_hybrid.py:38:    DE_BASE_IN + 24.0,
+./learn_3el_hybrid.py:39:    DE_BASE_IN - 12.0,
+./learn_3el_hybrid.py:40:    DE_BASE_IN - 24.0,
+./learn_3el_hybrid.py:41:    DE_BASE_IN - 36.0,
+./learn_3el_hybrid.py:82:        if e.name == "DE":
+./learn_3el_hybrid.py:92:    coupler_pos = de_pos + csp
+./learn_3el_hybrid.py:93:    dir1_pos = min(BOOM_IN, coupler_pos + DIR1_OFFSET_FROM_COUPLER)
+./learn_3el_hybrid.py:97:        Element("XFRMR", de_pos - xsp, DE_BASE_IN + 2.0),
+./learn_3el_hybrid.py:98:        Element("DE", de_pos, DE_BASE_IN),
+./learn_3el_hybrid.py:99:        Element("COUPLER", coupler_pos, DE_BASE_IN - 10.0),
+./learn_3el_hybrid.py:100:        Element("DIR1", dir1_pos, DE_BASE_IN - 15.0),
+./learn_3el_hybrid.py:191:def sweep_single(elements, ant, engine, freqs, generation, stage, move_name, values, applier, log_rows, print_every=5):
+./learn_3el_hybrid.py:236:    de = find_element(elements, "DE")
+./learn_3el_hybrid.py:242:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:245:        lambda els, v: set_cell(els, find_element(els, "DE").position_in, v, find_element(els, "COUPLER").position_in - find_element(els, "DE").position_in),
+./learn_3el_hybrid.py:250:    de = find_element(elements, "DE")
+./learn_3el_hybrid.py:256:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:259:        lambda els, v: set_cell(els, find_element(els, "DE").position_in, find_element(els, "DE").position_in - find_element(els, "XFRMR").position_in, v),
+./learn_3el_hybrid.py:263:    # 3) DE position only
+./learn_3el_hybrid.py:264:    de = find_element(elements, "DE")
+./learn_3el_hybrid.py:266:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:269:        lambda els, v: set_element(els, "DE", position=v),
+./learn_3el_hybrid.py:276:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:286:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:293:    # 6) DE length
+./learn_3el_hybrid.py:294:    de = find_element(elements, "DE")
+./learn_3el_hybrid.py:296:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:299:        lambda els, v: set_element(els, "DE", length=v),
+./learn_3el_hybrid.py:306:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:314:    de = find_element(elements, "DE")
+./learn_3el_hybrid.py:320:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:329:    coupler = find_element(elements, "COUPLER")
+./learn_3el_hybrid.py:330:    vals = frange(max(coupler.position_in + 30.0, d1.position_in - 18.0), min(BOOM_IN, d1.position_in + 18.0), 1.0)
+./learn_3el_hybrid.py:331:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:341:    elements, best_eval = sweep_single(
+./learn_3el_hybrid.py:357:    nec_path = MODELS_DIR / f"learn3el_best_{tag}.nec"
+./data/projects/cb_7el_hybrid_36ft.json:26:  "mode": "hybrid",
+./data/projects/cb_7el_hybrid_36ft.json:27:  "name": "cb_7el_hybrid_36ft",
+./data/projects/cb_7el_hybrid_36ft.json:28:  "notes": "7 user-count element hybrid; 9 physical elements",
+./data/projects/cb_3el_hybrid_HG_54t.json:15:    "DE": {
+./data/projects/cb_3el_hybrid_HG_54t.json:35:  "mode": "hybrid",
+./data/projects/cb_3el_hybrid_HG_54t.json:36:  "name": "cb_3el_hybrid_HG_54t",
+./data/projects/cb_3el_hybrid_HG_54t.json:37:  "notes": "3-element hybrid count; physical 5-element champion seed",
+./data/projects/cb_3el_hybrid_HG_54t.json:42:  "tuning_procedure": "cell_then_directors_repeat",
+./data/projects/cb_3el_hybrid_54ft.json:15:    "DE": {
+./data/projects/cb_3el_hybrid_54ft.json:35:  "mode": "hybrid",
+./data/projects/cb_3el_hybrid_54ft.json:36:  "name": "cb_3el_hybrid_54ft",
+./data/projects/cb_3el_hybrid_54ft.json:37:  "notes": "3-element hybrid count; physical 5-element champion seed",
+./data/projects/cb_3el_hybrid_54ft.json:42:  "tuning_procedure": "cell_then_directors_repeat",
+./data/projects/cb_5el_hybrid_30ft.json:12:  "mode": "hybrid",
+./data/projects/cb_5el_hybrid_30ft.json:13:  "name": "cb_5el_hybrid_30ft",
+./data/projects/cb_5el_hybrid_30ft.json:14:  "notes": "5-element hybrid count; physical 7-element champion seed",
+./data/projects/cb_10el_hybrid_36ft.json:13:    "DE": {
+./data/projects/cb_10el_hybrid_36ft.json:33:  "mode": "hybrid",
+./data/projects/cb_10el_hybrid_36ft.json:34:  "name": "cb_10el_hybrid_36ft",
+./data/projects/cb_10el_hybrid_36ft.json:35:  "notes": "8-element hybrid count; physical 10-element champion seed",
+./data/projects/cb_3el_hybrid_36ft.json:15:    "DE": {
+./data/projects/cb_3el_hybrid_36ft.json:35:  "mode": "hybrid",
+./data/projects/cb_3el_hybrid_36ft.json:36:  "name": "cb_3el_hybrid_36ft",
+./data/projects/cb_3el_hybrid_36ft.json:37:  "notes": "3-element hybrid count; physical 5-element champion seed",
+./data/projects/cb_3el_hybrid_36ft.json:42:  "tuning_procedure": "cell_then_directors_repeat",
+./data/projects/cb_3el_hybrid_WB_54ft.json:15:    "DE": {
+./data/projects/cb_3el_hybrid_WB_54ft.json:35:  "mode": "hybrid",
+./data/projects/cb_3el_hybrid_WB_54ft.json:36:  "name": "cb_3el_hybrid_WB_54ft",
+./data/projects/cb_3el_hybrid_WB_54ft.json:37:  "notes": "3-element hybrid count; physical 5-element champion seed",
+./data/projects/cb_3el_hybrid_WB_54ft.json:42:  "tuning_procedure": "cell_then_directors_repeat",
+./data/projects/cb_7el_hybrid_30ft.json:12:  "mode": "hybrid",
+./data/projects/cb_7el_hybrid_30ft.json:13:  "name": "cb_7el_hybrid_30ft",
+./data/projects/cb_7el_hybrid_30ft.json:14:  "notes": "7-element hybrid CB champion seed from run 3511",
+./data/learning_runs/learn3el_best_20260506_153807.json:14:      "name": "DE",
+./data/learning_runs/learn3el_best_20260506_153807.json:39:  "nec_file": "/home/sma-ububtu24/scripts/hybrid_auto7/models/learn3el_best_20260506_153807.nec",

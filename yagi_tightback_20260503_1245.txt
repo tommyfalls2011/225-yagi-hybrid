@@ -1,0 +1,249 @@
+Running NEC preflight check on seed geometry...
+Requested mode: real ground
+Center frequency: 27.100 MHz
+Seed geometry @ 27.100 MHz: 36.68 +21.58j ohms
+
+Probing radiation-pattern / gain support...
+Gain support detected: enabled
+
+Starting optimization with coordinate placement search...
+Ground mode: real ground
+Center frequency target: 27.100 MHz
+Optimization frequencies: 26.300, 26.600, 26.800, 26.920, 27.020, 27.100, 27.180, 27.280, 27.400, 27.600, 27.900
+Final sweep range: 25.600 to 28.600 MHz (61 points)
+Target RL near center: 18.0 dB
+Gain-aware search: enabled
+Baseline DE maxiter=10, popsize=8
+Position passes per step: 2
+Length passes per step:   2
+No files will be written.
+
+
+=== Baseline stage: swrmatch ===
+[DEBUG] stage=swrmatch seed cost=1269.278417
+differential_evolution step 1: f(x)= 468.06777010904096
+differential_evolution step 2: f(x)= 468.06777010904096
+differential_evolution step 3: f(x)= 394.5684921436369
+differential_evolution step 4: f(x)= 32.587527800025065
+differential_evolution step 5: f(x)= -36.96173050464007
+differential_evolution step 6: f(x)= -36.96173050464007
+differential_evolution step 7: f(x)= -36.96173050464007
+differential_evolution step 8: f(x)= -39.46646459040308
+differential_evolution step 9: f(x)= -39.46646459040308
+differential_evolution step 10: f(x)= -39.46646459040308
+
+BASELINE SWR/MATCH
+==================
+Center Z: 50.7790 +2.4935j ohms
+Center RL(raw): 31.73 dB
+Center SWR:     1.053
+Local min RL*:  20.10 dB
+Local mean RL*: 25.97 dB
+Local max SWR:  1.219
+Bandwidth RL>=target:  0.600 MHz
+Bandwidth RL>=15 dB:   0.600 MHz
+Bandwidth RL>=12 dB:   1.000 MHz
+Forward gain:   16.04 dB
+Rear gain:      1.71 dB
+Front/back:     14.33 dB
+Layout score: -454.7701
+* RL values here use reward clip at 30.0 dB
+
+=== Baseline stage: returnloss ===
+[DEBUG] stage=returnloss seed cost=-103.952775
+differential_evolution step 1: f(x)= -103.9527753103977
+differential_evolution step 2: f(x)= -103.9527753103977
+differential_evolution step 3: f(x)= -103.9527753103977
+differential_evolution step 4: f(x)= -103.9527753103977
+differential_evolution step 5: f(x)= -103.9527753103977
+differential_evolution step 6: f(x)= -103.9527753103977
+differential_evolution step 7: f(x)= -104.90679733782594
+differential_evolution step 8: f(x)= -104.90679733782594
+differential_evolution step 9: f(x)= -104.90679733782594
+differential_evolution step 10: f(x)= -104.90679733782594
+
+BASELINE RETURN-LOSS
+====================
+Center Z: 51.3497 +2.6970j ohms
+Center RL(raw): 30.53 dB
+Center SWR:     1.061
+Local min RL*:  20.97 dB
+Local mean RL*: 26.93 dB
+Local max SWR:  1.197
+Bandwidth RL>=target:  0.600 MHz
+Bandwidth RL>=15 dB:   0.800 MHz
+Bandwidth RL>=12 dB:   0.800 MHz
+Forward gain:   15.94 dB
+Rear gain:      2.12 dB
+Front/back:     13.82 dB
+Layout score: -623.9730
+* RL values here use reward clip at 30.0 dB
+
+=== COARSE_POSITION_SEARCH ===
+  baseline_rl: score=-623.973, SWR=1.061, RL=30.53 dB, localRL=20.97 dB, BW=0.600 MHz, Gain=15.94 dB, F/B=13.82 dB | baseline return-loss result
+
+  Step size: 2.000 in
+    Pass 1
+      ACCEPT coarse_position_search:pos: score=-587.698, SWR=1.044, RL=33.26 dB, localRL=19.08 dB, BW=0.600 MHz, Gain=15.94 dB, F/B=13.98 dB | DE forward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-530.405, SWR=1.051, RL=32.01 dB, localRL=20.23 dB, BW=0.600 MHz, Gain=15.95 dB, F/B=14.05 dB | D2 backward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-460.415, SWR=1.082, RL=28.14 dB, localRL=18.80 dB, BW=0.600 MHz, Gain=15.95 dB, F/B=14.37 dB | D3 forward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-350.999, SWR=1.095, RL=26.89 dB, localRL=18.43 dB, BW=0.600 MHz, Gain=15.94 dB, F/B=14.82 dB | D4 backward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-316.419, SWR=1.088, RL=27.49 dB, localRL=18.95 dB, BW=0.600 MHz, Gain=15.95 dB, F/B=14.98 dB | D5 forward 2.000 in
+    Pass 2
+      ACCEPT coarse_position_search:pos: score=-267.716, SWR=1.094, RL=26.97 dB, localRL=18.53 dB, BW=0.600 MHz, Gain=15.95 dB, F/B=15.18 dB | DE forward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-250.840, SWR=1.141, RL=23.62 dB, localRL=16.98 dB, BW=0.480 MHz, Gain=15.96 dB, F/B=15.31 dB | D2 backward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-185.339, SWR=1.194, RL=21.08 dB, localRL=15.90 dB, BW=0.480 MHz, Gain=15.96 dB, F/B=15.66 dB | D3 forward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-126.167, SWR=1.228, RL=19.79 dB, localRL=15.51 dB, BW=0.260 MHz, Gain=15.95 dB, F/B=16.16 dB | D4 backward 2.000 in
+      ACCEPT coarse_position_search:pos: score=-101.670, SWR=1.238, RL=19.46 dB, localRL=15.69 dB, BW=0.260 MHz, Gain=15.96 dB, F/B=16.35 dB | D5 forward 2.000 in
+
+  Step size: 1.000 in
+    Pass 1
+      ACCEPT coarse_position_search:pos: score=-80.394, SWR=1.245, RL=19.24 dB, localRL=15.43 dB, BW=0.260 MHz, Gain=15.96 dB, F/B=16.48 dB | DE forward 1.000 in
+      ACCEPT coarse_position_search:pos: score=-66.611, SWR=1.248, RL=19.15 dB, localRL=15.45 dB, BW=0.260 MHz, Gain=15.95 dB, F/B=16.58 dB | D1 backward 1.000 in
+    Pass 2
+      No improving moves this pass.
+
+=== LENGTH_TRIM_SEARCH ===
+  coarse_position_search:pos: score=-66.611, SWR=1.248, RL=19.15 dB, localRL=15.45 dB, BW=0.260 MHz, Gain=15.95 dB, F/B=16.58 dB | D1 backward 1.000 in
+
+  Length step size: 0.250 in
+    Pass 1
+      ACCEPT length_trim_search:len: score=-57.469, SWR=1.247, RL=19.17 dB, localRL=15.46 dB, BW=0.260 MHz, Gain=15.96 dB, F/B=16.63 dB | REF shorter 0.250 in
+      ACCEPT length_trim_search:len: score=-51.857, SWR=1.224, RL=19.93 dB, localRL=16.02 dB, BW=0.260 MHz, Gain=15.96 dB, F/B=16.64 dB | DE longer 0.250 in
+      ACCEPT length_trim_search:len: score=-38.741, SWR=1.192, RL=21.13 dB, localRL=16.52 dB, BW=0.360 MHz, Gain=15.95 dB, F/B=16.54 dB | D1 shorter 0.250 in
+      ACCEPT length_trim_search:len: score=-13.329, SWR=1.213, RL=20.35 dB, localRL=16.20 dB, BW=0.360 MHz, Gain=15.95 dB, F/B=16.75 dB | D2 shorter 0.250 in
+      ACCEPT length_trim_search:len: score=-3.510, SWR=1.223, RL=19.99 dB, localRL=16.16 dB, BW=0.360 MHz, Gain=15.95 dB, F/B=16.85 dB | D3 longer 0.250 in
+      ACCEPT length_trim_search:len: score=3.490, SWR=1.229, RL=19.75 dB, localRL=15.96 dB, BW=0.260 MHz, Gain=15.94 dB, F/B=17.01 dB | D5 shorter 0.250 in
+    Pass 2
+      ACCEPT length_trim_search:len: score=11.879, SWR=1.229, RL=19.77 dB, localRL=15.97 dB, BW=0.260 MHz, Gain=15.95 dB, F/B=17.07 dB | REF shorter 0.250 in
+      ACCEPT length_trim_search:len: score=32.032, SWR=1.207, RL=20.56 dB, localRL=16.56 dB, BW=0.360 MHz, Gain=15.95 dB, F/B=17.07 dB | DE longer 0.250 in
+      ACCEPT length_trim_search:len: score=41.058, SWR=1.176, RL=21.83 dB, localRL=17.09 dB, BW=0.480 MHz, Gain=15.94 dB, F/B=16.97 dB | D1 shorter 0.250 in
+      ACCEPT length_trim_search:len: score=52.095, SWR=1.195, RL=21.03 dB, localRL=16.77 dB, BW=0.360 MHz, Gain=15.94 dB, F/B=17.18 dB | D2 shorter 0.250 in
+      ACCEPT length_trim_search:len: score=60.098, SWR=1.204, RL=20.66 dB, localRL=16.73 dB, BW=0.360 MHz, Gain=15.94 dB, F/B=17.28 dB | D3 longer 0.250 in
+      ACCEPT length_trim_search:len: score=65.945, SWR=1.206, RL=20.58 dB, localRL=16.62 dB, BW=0.360 MHz, Gain=15.94 dB, F/B=17.33 dB | D4 longer 0.250 in
+      ACCEPT length_trim_search:len: score=85.512, SWR=1.214, RL=20.31 dB, localRL=16.41 dB, BW=0.360 MHz, Gain=15.93 dB, F/B=17.49 dB | D5 shorter 0.250 in
+
+  Length step size: 0.125 in
+    Pass 1
+      ACCEPT length_trim_search:len: score=89.229, SWR=1.213, RL=20.32 dB, localRL=16.42 dB, BW=0.360 MHz, Gain=15.93 dB, F/B=17.52 dB | REF shorter 0.125 in
+      ACCEPT length_trim_search:len: score=91.199, SWR=1.203, RL=20.71 dB, localRL=16.72 dB, BW=0.360 MHz, Gain=15.93 dB, F/B=17.53 dB | DE longer 0.125 in
+      ACCEPT length_trim_search:len: score=102.604, SWR=1.188, RL=21.32 dB, localRL=16.99 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.47 dB | D1 shorter 0.125 in
+      ACCEPT length_trim_search:len: score=105.087, SWR=1.189, RL=21.26 dB, localRL=16.93 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.50 dB | D4 longer 0.125 in
+      ACCEPT length_trim_search:len: score=114.180, SWR=1.193, RL=21.09 dB, localRL=16.82 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.58 dB | D5 shorter 0.125 in
+    Pass 2
+      ACCEPT length_trim_search:len: score=117.836, SWR=1.193, RL=21.10 dB, localRL=16.83 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.61 dB | REF shorter 0.125 in
+      ACCEPT length_trim_search:len: score=119.564, SWR=1.184, RL=21.50 dB, localRL=17.14 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.61 dB | DE longer 0.125 in
+      ACCEPT length_trim_search:len: score=121.824, SWR=1.185, RL=21.43 dB, localRL=17.08 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.64 dB | D4 longer 0.125 in
+      ACCEPT length_trim_search:len: score=130.337, SWR=1.190, RL=21.24 dB, localRL=16.97 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.72 dB | D5 shorter 0.125 in
+
+=== FINE_POSITION_SEARCH ===
+  length_trim_search:len: score=130.337, SWR=1.190, RL=21.24 dB, localRL=16.97 dB, BW=0.480 MHz, Gain=15.93 dB, F/B=17.72 dB | D5 shorter 0.125 in
+
+  Step size: 0.500 in
+    Pass 1
+      ACCEPT fine_position_search:pos: score=136.853, SWR=1.194, RL=21.09 dB, localRL=16.79 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.78 dB | DE forward 0.500 in
+      ACCEPT fine_position_search:pos: score=140.360, SWR=1.194, RL=21.09 dB, localRL=16.77 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.82 dB | D1 backward 0.500 in
+      ACCEPT fine_position_search:pos: score=146.172, SWR=1.204, RL=20.68 dB, localRL=16.51 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.89 dB | D2 backward 0.500 in
+    Pass 2
+      ACCEPT fine_position_search:pos: score=151.593, SWR=1.210, RL=20.45 dB, localRL=16.31 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.96 dB | DE forward 0.500 in
+
+  Step size: 0.250 in
+    Pass 1
+      ACCEPT fine_position_search:pos: score=152.802, SWR=1.211, RL=20.42 dB, localRL=16.30 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.97 dB | D1 backward 0.250 in
+    Pass 2
+      No improving moves this pass.
+
+TOP LOGGED LAYOUTS
+==================
+Rank  Score      SWR    RL(dB)  LocalRL  BW(MHz)  Gain(dB)  F/B(dB)  Accepted  Note
+   1   152.802  1.211   20.42    16.30    0.480     15.92    17.97      True  D1 backward 0.250 in
+   2   152.215  1.208   20.52    16.30    0.480     15.92    17.96     False  D5 backward 0.250 in
+   3   151.593  1.210   20.45    16.31    0.480     15.92    17.96      True  DE forward 0.500 in
+   4   150.347  1.207   20.55    16.40    0.480     15.92    17.94     False  DE backward 0.250 in
+   5   150.132  1.205   20.64    16.31    0.480     15.92    17.93     False  D5 backward 0.500 in
+   6   150.089  1.209   20.47    16.33    0.480     15.92    17.94     False  D1 forward 0.250 in
+   7   149.683  1.206   20.58    16.42    0.480     15.92    17.93     False  D2 forward 0.250 in
+   8   148.951  1.207   20.57    16.41    0.480     15.92    17.93     False  DE backward 0.250 in
+   9   147.013  1.205   20.62    16.37    0.480     15.92    17.90     False  D4 forward 0.250 in
+  10   146.769  1.205   20.61    16.42    0.480     15.92    17.90     False  D3 backward 0.250 in
+  11   146.310  1.216   20.21    16.22    0.360     15.92    18.05     False  D4 backward 0.250 in
+  12   146.172  1.204   20.68    16.51    0.480     15.92    17.89      True  D2 backward 0.500 in
+
+FINAL LAYOUT DECISION
+=====================
+Selected the highest-scoring logged layout using the combined score.
+  fine_position_search:pos: score=152.802, SWR=1.211, RL=20.42 dB, localRL=16.30 dB, BW=0.480 MHz, Gain=15.92 dB, F/B=17.97 dB | D1 backward 0.250 in
+
+BEST GEOMETRY
+=============
+Height: 45.3429 ft    45 ft 4 1/8 in
+Boom length REF to D5: 31.4301 ft    31 ft 5 3/16 in
+Element taper: center 0.625 in OD, outer 0.500 in OD
+Reflector over DE allowed range: 2.0 in to 18.0 in
+
+Elements:
+  Name    Length decimal ft      Length ft/in        Position from REF
+  REF       18.8845 ft       18 ft 10 5/8 in             0 ft 0 in
+   DE       17.6871 ft        17 ft 8 1/4 in        7 ft 7 1/16 in
+   D1       16.9254 ft       16 ft 11 1/8 in        9 ft 10 3/4 in
+   D2       16.6083 ft       16 ft 7 5/16 in        14 ft 6 1/4 in
+   D3       16.3417 ft        16 ft 4 1/8 in      20 ft 3 15/16 in
+   D4       16.0417 ft        16 ft 0 1/2 in        25 ft 0 3/4 in
+   D5       15.6875 ft        15 ft 8 1/4 in       31 ft 5 3/16 in
+
+Spacings:
+  REF to DE: 7.5860 ft    7 ft 7 1/16 in
+  DE to D1: 2.3116 ft    2 ft 3 3/4 in
+  D1 to D2: 4.6243 ft    4 ft 7 1/2 in
+  D2 to D3: 5.8083 ft    5 ft 9 11/16 in
+  D3 to D4: 4.7333 ft    4 ft 8 13/16 in
+  D4 to D5: 6.3667 ft    6 ft 4 3/8 in
+
+CENTER-FREQUENCY RESULT
+=======================
+Center frequency: 27.100 MHz
+Feed Z: 43.2532 -5.8126j ohms
+Return loss (report clipped): 20.42 dB
+Return loss (raw):            20.42 dB
+SWR: 1.2107
+Mismatch efficiency: 99.0916 %
+Forward gain proxy (+Y): 15.92 dB
+Rear gain proxy (max rear-cone): -2.05 dB
+Front-to-back proxy:     17.97 dB
+
+Running final sweep...
+
+SWEEP SUMMARY
+=============
+Frequency range: 25.600 to 28.600 MHz
+Center target:   27.100 MHz
+RL report clip:  40.0 dB
+RL reward clip:  30.0 dB
+Best return loss:  20.70 dB at 27.200 MHz
+Worst return loss: 0.36 dB at 28.600 MHz
+Average RL:        10.60 dB
+Average SWR:       4.62
+Worst SWR:         48.01
+Average mismatch efficiency: 81.19 %
+At center 27.100 MHz: RL(report) 20.42 dB, RL(raw) 20.42 dB, SWR 1.211, Z = 43.2532 -5.8126j
+Bandwidth with RL >= 18.0 dB: 0.450 MHz, 26.950 to 27.400 MHz
+
+Selected frequency points:
+  MHz       R+jX ohms             RL dB     SWR     Eff %
+  25.600      41.24   -46.77j      6.67     2.73     78.46
+  25.950      40.87   -37.43j      8.13     2.29     84.63
+  26.350      40.42   -25.19j     10.84     1.81     91.76
+  26.700      41.31   -14.35j     14.82     1.44     96.71
+  27.100      43.25    -5.81j     20.42     1.21     99.09
+  27.450      37.75    -3.26j     16.81     1.34     97.92
+  27.850      21.27   +11.95j      7.32     2.51     81.46
+  28.200      17.99   +30.82j      4.51     3.94     64.57
+  28.600       2.42   +57.45j      0.36    48.01      7.99
+
+CENTER PATTERN PROXY
+====================
+Forward gain (+Y): 15.92 dB
+Rear gain (-Y):    -2.05 dB
+Front-to-back:     17.97 dB
+
+No files written in this debug version.

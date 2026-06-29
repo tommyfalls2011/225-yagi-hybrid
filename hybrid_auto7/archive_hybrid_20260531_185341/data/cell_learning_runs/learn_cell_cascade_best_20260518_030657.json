@@ -1,0 +1,47 @@
+{
+  "type": "cell_placement_tune",
+  "tune_method": "cascading_procedure",
+  "center_freq_mhz": 27.205,
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "xfrmr_position_in": 30.25,
+  "de_position_in": 60.0,
+  "coupler_position_in": 86.0,
+  "xfrmr_spacing_in": 29.75,
+  "coupler_spacing_in": 26.0,
+  "xfrmr_length_in": 191.832641,
+  "de_length_in": 208.582641,
+  "coupler_length_in": 181.582641,
+  "elements": [
+    {
+      "name": "XFRMR",
+      "position_in": 30.25,
+      "length_in": 191.832641
+    },
+    {
+      "name": "DE",
+      "position_in": 60.0,
+      "length_in": 208.582641
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 86.0,
+      "length_in": 181.582641
+    }
+  ],
+  "score": -2140.134161281076,
+  "min_swr": 2.294135,
+  "max_swr": 2.780397,
+  "avg_swr": 2.528314,
+  "center_r": 38.41964613993762,
+  "center_x": -39.9655501411088,
+  "center_swr": 2.501527883041032,
+  "center_rl_db": 7.3544837533746765,
+  "avg_r": 38.494223,
+  "avg_abs_x": 40.493749,
+  "points_under_1p5": 0,
+  "points_under_2p0": 0,
+  "real_gain_dbi": 8.94,
+  "peak_elev_deg": 10.0,
+  "nec_file": "/home/sma-ububtu24/scripts/hybrid_auto7/models/learn_cell_cascade_20260518_030657.nec"
+}

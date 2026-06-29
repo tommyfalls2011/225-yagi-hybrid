@@ -1,0 +1,75 @@
+3-ELEMENT HYBRID LEARNING REPORT
+================================
+
+Best score:           13369.0
+Min SWR:              1.008
+Max SWR:              1.093
+Avg SWR:              1.035
+Center R:             49.264 ohm
+Center X:             0.216 ohm
+Center SWR:           1.016
+Avg R:                48.950 ohm
+Avg |X|:              0.364 ohm
+Worst RL:             27.05 dB
+Forward gain:         13.030 dBi  (10.880 dBd)
+Front/back:           24.860 dB
+Power x (vs dipole):  12.25x
+Power x (vs iso):     20.09x
+
+Best layout
+-----------
+REF      pos=   0.000 in  spacing=   0.000 in  length= 218.769 in
+XFRMR    pos=  23.000 in  spacing=  23.000 in  length= 198.509 in
+DE       pos=  44.000 in  spacing=  21.000 in  length= 213.509 in
+COUPLER  pos=  53.000 in  spacing=   9.000 in  length= 192.509 in
+DIR1     pos= 114.000 in  spacing=  61.000 in  length= 189.509 in
+
+Best move
+---------
+{
+  "generation": 1,
+  "stage": "stage6_de_len",
+  "move": "de_len=212.508549",
+  "before_score": 6657.17617615238,
+  "after_score": 11393.51251650264,
+  "score_delta": 4736.33634035026,
+  "before_max_swr": 1.668781,
+  "after_max_swr": 1.535112,
+  "before_avg_swr": 1.586324,
+  "after_avg_swr": 1.487856,
+  "before_center_r": 33.46602427601934,
+  "after_center_r": 34.483401128186394,
+  "before_center_x": -8.914592550651173,
+  "after_center_x": -4.996148564935325,
+  "before_gain": 12.94,
+  "after_gain": 12.94,
+  "before_fb": 29.759999999999998,
+  "after_fb": 29.560000000000002
+}
+
+Worst move
+----------
+{
+  "generation": 2,
+  "stage": "stage6_de_len",
+  "move": "de_len=205.508549",
+  "before_score": 13350.35069444933,
+  "after_score": 585.9298330099632,
+  "score_delta": -12764.420861439366,
+  "before_max_swr": 1.096367,
+  "after_max_swr": 2.435427,
+  "before_avg_swr": 1.035564,
+  "after_avg_swr": 2.244847,
+  "before_center_r": 48.89246009812801,
+  "after_center_r": 34.57306887862385,
+  "before_center_x": -0.598263210996026,
+  "after_center_x": -30.557500981356274,
+  "before_gain": 13.0,
+  "after_gain": 13.0,
+  "before_fb": 24.6,
+  "after_fb": 25.61
+}
+
+NEC file:             /home/sma-ububtu24/scripts/hybrid_auto7/models/learn3el_best_20260526_010927.nec
+JSON best:            /home/sma-ububtu24/scripts/hybrid_auto7/data/learning_runs/learn3el_best_20260526_010927.json
+Move log:             /home/sma-ububtu24/scripts/hybrid_auto7/data/learning_runs/learn3el_moves_20260526_010927.jsonl

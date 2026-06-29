@@ -1,0 +1,88 @@
+{
+  "elapsed_sec": 0.0006215572357177734,
+  "args": {
+    "trials": 25,
+    "top_k": 5,
+    "use_kb": false,
+    "seed": null,
+    "mode": "yagi",
+    "boom_ft": 30.0,
+    "n_directors": 4,
+    "lock_best_cell": false,
+    "label": "30ft_6el_yagi"
+  },
+  "kb_state_after": {
+    "good_cells": [],
+    "bad_starts": [
+      {
+        "de_pos": 61.2,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 68.6,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 37.7,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 58.1,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 47.7,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 45.0,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 42.1,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 63.8,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 49.8,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 52.7,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      },
+      {
+        "de_pos": 55.5,
+        "reason": "exception",
+        "msg": "Missing element: XFRMR",
+        "logged_at": "2026-05-23T20:22:18+00:00"
+      }
+    ],
+    "best_full_designs": [],
+    "dead_paths": [],
+    "schema_version": 1
+  }
+}

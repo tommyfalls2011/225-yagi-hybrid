@@ -1,0 +1,291 @@
+[
+  {
+    "name": "tune_DE_length_resonance",
+    "type": "sweep_length",
+    "element": "DE",
+    "start_in": 200.0,
+    "stop_in": 222.0,
+    "step_in": 0.5,
+    "score_mode": "resonance",
+    "notes": "Find DE length where R~50\u03a9 and X~0 (true resonance)"
+  },
+  {
+    "name": "tune_XFRMR_length",
+    "type": "sweep_length",
+    "element": "XFRMR",
+    "start_in": 175.0,
+    "stop_in": 209.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "Coarse XFRMR length sweep"
+  },
+  {
+    "name": "tune_COUPLER_length",
+    "type": "sweep_length",
+    "element": "COUPLER",
+    "start_in": 155.0,
+    "stop_in": 199.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "Coarse COUPLER length sweep"
+  },
+  {
+    "name": "retune_XFRMR_length",
+    "type": "nudge_length",
+    "element": "XFRMR",
+    "delta_in": 2.0,
+    "step_in": 0.25,
+    "score_mode": "composite",
+    "notes": "Fine XFRMR length nudge around current"
+  },
+  {
+    "name": "retune_COUPLER_length",
+    "type": "nudge_length",
+    "element": "COUPLER",
+    "delta_in": 3.0,
+    "step_in": 0.25,
+    "score_mode": "composite",
+    "notes": "Fine COUPLER length nudge"
+  },
+  {
+    "name": "nudge_XFRMR_spacing",
+    "type": "nudge_position",
+    "element": "XFRMR",
+    "delta_in": 4.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "XFRMR position nudge \u2014 moves it relative to DE"
+  },
+  {
+    "name": "nudge_COUPLER_spacing",
+    "type": "nudge_position",
+    "element": "COUPLER",
+    "delta_in": 5.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "COUPLER position nudge"
+  },
+  {
+    "name": "tune_REF_length",
+    "type": "sweep_length",
+    "element": "REF",
+    "start_in": 208.0,
+    "stop_in": 234.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "Reflector length"
+  },
+  {
+    "name": "nudge_REF_position",
+    "type": "nudge_position",
+    "element": "REF",
+    "delta_in": 6.0,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "REF position (relative to DE)"
+  },
+  {
+    "name": "tune_DIR1_position",
+    "type": "nudge_position",
+    "element": "DIR1",
+    "delta_in": 24.0,
+    "step_in": 2.0,
+    "score_mode": "composite",
+    "notes": "DIR1 placement"
+  },
+  {
+    "name": "tune_DIR1_length",
+    "type": "sweep_length",
+    "element": "DIR1",
+    "start_in": 175.0,
+    "stop_in": 208.0,
+    "step_in": 1.0,
+    "score_mode": "composite",
+    "notes": "DIR1 length"
+  },
+  {
+    "name": "tune_DIR2_position",
+    "type": "nudge_position",
+    "element": "DIR2",
+    "delta_in": 30.0,
+    "step_in": 2.0,
+    "score_mode": "composite",
+    "notes": "DIR2 placement"
+  },
+  {
+    "name": "tune_DIR2_length",
+    "type": "sweep_length",
+    "element": "DIR2",
+    "start_in": 170.0,
+    "stop_in": 204.0,
+    "step_in": 1.0,
+    "score_mode": "composite",
+    "notes": "DIR2 length"
+  },
+  {
+    "name": "tune_DIR3_position",
+    "type": "nudge_position",
+    "element": "DIR3",
+    "delta_in": 36.0,
+    "step_in": 2.0,
+    "score_mode": "composite",
+    "notes": "DIR3 placement"
+  },
+  {
+    "name": "tune_DIR3_length",
+    "type": "sweep_length",
+    "element": "DIR3",
+    "start_in": 165.0,
+    "stop_in": 200.0,
+    "step_in": 1.0,
+    "score_mode": "composite",
+    "notes": "DIR3 length"
+  },
+  {
+    "name": "tune_DIR4_position",
+    "type": "nudge_position",
+    "element": "DIR4",
+    "delta_in": 40.0,
+    "step_in": 2.0,
+    "score_mode": "composite",
+    "notes": "DIR4 placement"
+  },
+  {
+    "name": "tune_DIR4_length",
+    "type": "sweep_length",
+    "element": "DIR4",
+    "start_in": 160.0,
+    "stop_in": 196.0,
+    "step_in": 1.0,
+    "score_mode": "composite",
+    "notes": "DIR4 length"
+  },
+  {
+    "name": "REF_Length_Sweep_2",
+    "type": "sweep_length",
+    "element": "REF",
+    "notes": "",
+    "score_mode": "composite",
+    "start_in": 160.0,
+    "stop_in": 257.0,
+    "step_in": 0.5
+  },
+  {
+    "name": "sweep_COUPLER_pos_wide",
+    "type": "sweep_position",
+    "element": "COUPLER",
+    "start_in": 57.5,
+    "stop_in": 77.5,
+    "step_in": 0.5,
+    "score_mode": "composite",
+    "notes": "Wide COUPLER position sweep -- explores DE-COUPLER spacing 10-30 in to find the matching sweet spot (12-23 in)."
+  },
+  {
+    "name": "sweep_XFRMR_pos_wide",
+    "type": "sweep_position",
+    "element": "XFRMR",
+    "start_in": 35.5,
+    "stop_in": 43.5,
+    "step_in": 0.25,
+    "score_mode": "composite",
+    "notes": "Wide XFRMR position sweep -- explores DE-XFRMR spacing 4-12 in to find the matching sweet spot (5.5-6.5 in)."
+  },
+  {
+    "name": "window2_dirs_move",
+    "type": "group_window_position",
+    "window": 2,
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Auto-tile: move directors 2 at a time across the whole array (DIR1+2, DIR3+4, ...). Fits any director count."
+  },
+  {
+    "name": "window3_dirs_move",
+    "type": "group_window_position",
+    "window": 3,
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Auto-tile: move directors 3 at a time (DIR1+2+3, DIR4+5+6, ...)."
+  },
+  {
+    "name": "window4_dirs_move",
+    "type": "group_window_position",
+    "window": 4,
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Auto-tile: move directors 4 at a time."
+  },
+  {
+    "name": "grow_dirs_2to8_move",
+    "type": "group_window_position",
+    "window": 2,
+    "window_max": 8,
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Growing windows: 2 at a time, then 3, then 4 ... up to 8 directors at a time across the array. One tune, auto-fits your director count."
+  },
+  {
+    "name": "window2_dirs_length",
+    "type": "group_window_length",
+    "window": 2,
+    "delta_in": 5.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Auto-tile: grow/shrink director lengths 2 at a time."
+  },
+  {
+    "name": "group_cell_move",
+    "type": "group_position",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER"
+    ],
+    "delta_in": 8.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Move the whole driven cell (REF/XFRMR/DE/COUPLER) together vs the directors."
+  },
+  {
+    "name": "group_cell_length",
+    "type": "group_length",
+    "elements": [
+      "REF",
+      "XFRMR",
+      "DE",
+      "COUPLER"
+    ],
+    "delta_in": 6.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Grow/shrink the whole cell length together."
+  },
+  {
+    "name": "all_dirs_move",
+    "type": "group_position",
+    "elements": [
+      "DIR1",
+      "DIR2",
+      "DIR3",
+      "DIR4",
+      "DIR5",
+      "DIR6",
+      "DIR7",
+      "DIR8",
+      "DIR9",
+      "DIR10",
+      "DIR11",
+      "DIR12",
+      "DIR13",
+      "DIR14"
+    ],
+    "delta_in": 10.0,
+    "step_in": 0.5,
+    "score_mode": "match",
+    "notes": "Move EVERY director present together at once (absent ones skipped)."
+  }
+]

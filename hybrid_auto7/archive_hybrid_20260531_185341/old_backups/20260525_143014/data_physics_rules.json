@@ -1,0 +1,27 @@
+{
+  "MIN_SPACING_IN": 8.0,
+  "MAX_SPACING_IN": 48.0,
+  "MIN_LEN_GAP_FROM_DE": 6.0,
+  "MAX_PEAK_ELEV_DEG": 45.0,
+  "DIRECTOR_MODE": "strict_progressive",
+  "XFRMR_LT_DE": true,
+  "COUPLER_LT_DE": true,
+  "DIR_MIN_LEN_IN": 80.0,
+  "DIR_MAX_LEN_IN": 108.0,
+  "DE_MIN_LEN_IN": 100.0,
+  "DE_MAX_LEN_IN": 112.0,
+  "REFL_MIN_LEN_IN": 108.0,
+  "REFL_MAX_LEN_IN": 120.0,
+  "STRICT_PROGRESSION": true,
+  "REJECT_SKY_BOUNCER": true,
+  "REFL_GE_DE": true,
+  "DIR1_LT_COUPLER": true,
+  "SENTINEL_REAR_GAIN": -900.0,
+  "BOOM_GROUNDED": true,
+  "BOOM_GROUND_NAMES": [
+    "XFRMR",
+    "COUPLER"
+  ],
+  "BOOM_RADIUS_IN": 0.08,
+  "BOOM_AXIS": "x"
+}

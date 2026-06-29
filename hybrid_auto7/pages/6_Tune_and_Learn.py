@@ -1,0 +1,863 @@
+"""v2 Auto-Learn page — closed-loop self-learning wideband matcher in the UI.
+
+Runs the same engine as `auto_learn_run.py` (hyagi.auto_learn.run_learning):
+warm-starts from the best matching past run in auto7_history.db, drives the
+WORST in-band SWR down with the coordinate-descent matcher, recovers gain/F-B,
+and saves every run back to the DB so the next run starts smarter.
+"""
+import json
+import math as _math
+import pathlib
+import sys
+import datetime
+import threading
+import time
+
+import streamlit as st
+
+try:
+    # Lets the background tune thread write to st.session_state without
+    # Streamlit warning about missing ScriptRunContext.
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
+except Exception:
+    add_script_run_ctx = None
+
+st.set_page_config(page_title="Tune & Learn", layout="wide")
+st.title("Tune & Learn  ·  run · log · self-learn")
+st.caption("Bottom of the workflow: tune with the auto-matcher OR your own "
+           "procedure, log every move (good and bad), self-learn from past runs, "
+           "and report the result. Set the antenna up on the Antenna Setup page "
+           "first; pick mini-tunes / procedures on their pages.")
+
+ROOT = pathlib.Path.home() / "scripts/hybrid_auto7"
+GEO_PATH = ROOT / "data/current_geometry_v2.json"
+RULES_PATH = ROOT / "data/rules_v2.json"
+MINI_PATH = ROOT / "data/mini_tunes_v2.json"
+PROC_PATH = ROOT / "data/procedures_v2.json"
+SETUP_PATH = ROOT / "data/setup_v2.json"
+
+sys.path.insert(0, str(ROOT))
+from hyagi import v2_runner  # noqa: E402
+from hyagi import perf_report  # noqa: E402
+from hyagi import hybrid_seed  # noqa: E402
+from hyagi import exporters  # noqa: E402
+from hyagi.units import fmt_in  # noqa: E402
+from hyagi.auto_learn import LearnConfig, run_learning  # noqa: E402
+
+
+@st.cache_data(ttl=2)
+def _load(p):
+    return json.loads(pathlib.Path(p).read_text())
+
+
+def _load_setup():
+    try:
+        return json.loads(SETUP_PATH.read_text())
+    except Exception:
+        return {"n_directors": 3, "boom_mode": "fixed", "boom_length_in": None,
+                "height_ft": 30.0, "boom_diameter_in": 1.5, "grounding": "insulated"}
+
+
+geo = _load(str(GEO_PATH))
+rules = _load(str(RULES_PATH))
+minis = _load(str(MINI_PATH))
+procs = _load(str(PROC_PATH))
+setup = _load_setup()
+
+glb = rules["global"]
+# Apply construction options from Antenna Setup to live exports / previews too.
+v2_runner.GROUNDED = (str(setup.get("grounding", "all_insulated"))
+                      in ("grounded", "all_grounded", "cell_insulated"))
+v2_runner.GROUNDING = {
+    "insulated": "all_insulated",
+    "grounded": "all_grounded",
+}.get(setup.get("grounding"), str(setup.get("grounding", "all_insulated")))
+v2_runner.BOOM_DIAMETER_IN = float(setup.get("boom_diameter_in", 1.5))
+
+# Design centre + wideband half-width.  Centre is the user's chosen operating
+# frequency from rules.global; the half-width says "how far each way should
+# the matcher try to keep SWR flat".  Band edges f_low / f_high are derived
+# symmetrically (f_low = fc - hw, f_high = fc + hw) so the antenna's natural
+# resonance is ALWAYS pinned at the user's centre, never drifted to the band
+# midpoint.  Widgets read state from these keys, so any preset must mutate
+# session_state BEFORE the widgets render.
+_default_fc = float(glb.get("freq_mhz_center", 27.195))
+if "al_fc" not in st.session_state:
+    st.session_state["al_fc"] = _default_fc
+# Half-width state: derived from any pre-existing f_low/f_high in rules, but
+# clamped to >=0.2 MHz so the slider has somewhere to sit.
+_existing_low = float(glb.get("freq_mhz_low", _default_fc - 0.22))
+_existing_high = float(glb.get("freq_mhz_high", _default_fc + 0.22))
+_existing_hw = max(0.2, 0.5 * (_existing_high - _existing_low))
+if "al_hw" not in st.session_state:
+    st.session_state["al_hw"] = round(_existing_hw, 3)
+
+st.success(
+    f"From Antenna Setup → {len(geo['elements'])} elements · height "
+    f"{float(setup.get('height_ft', 30.0)):.0f} ft · boom "
+    f"{'FREE (tuner moves spacings)' if setup.get('boom_mode') == 'free' else 'FIXED'} · "
+    f"boom Ø {float(setup.get('boom_diameter_in', 1.5)):.2f}\" · "
+    f"elements {str(setup.get('grounding', 'insulated')).upper()}. "
+    f"Change these on the Antenna Setup page."
+)
+
+c1, c2 = st.columns(2)
+with c1:
+    # Preset row: narrow CB / freeband / 1.5 MHz wideband / 3 MHz wideband.
+    # Each preset writes session_state for centre + half-width BEFORE the
+    # widgets render so Streamlit doesn't reject the post-instantiation write.
+    p1, p2, p3, p4 = st.columns(4)
+    with p1:
+        if st.button("📻 CB (±0.22)", key="al_p_cb",
+                     use_container_width=True,
+                     help="40-channel CB band: ±220 kHz around centre"):
+            st.session_state["al_hw"] = 0.220
+            st.rerun()
+    with p2:
+        if st.button("📡 Freeband (±0.5)", key="al_p_fb",
+                     use_container_width=True,
+                     help="Common freeband / 11 m: ±0.5 MHz"):
+            st.session_state["al_hw"] = 0.5
+            st.rerun()
+    with p3:
+        if st.button("🌐 Wide (±1.5)", key="al_p_owa15",
+                     use_container_width=True,
+                     help="Wideband target: ±1.5 MHz around centre"):
+            st.session_state["al_hw"] = 1.5
+            st.rerun()
+    with p4:
+        if st.button("🌍 Extreme (±3.0)", key="al_p_owa30",
+                     use_container_width=True,
+                     help="Extreme OWA: ±3 MHz around centre. The matcher "
+                          "will TRY to flatten SWR over the full ±3 MHz; if "
+                          "physics says no, you get the best achievable "
+                          "wideband around the centre — the centre never "
+                          "drifts."):
+            st.session_state["al_hw"] = 3.0
+            st.rerun()
+
+    fc_input = st.number_input(
+        "Design centre (MHz)  — antenna ALWAYS resonates here",
+        min_value=1.0, max_value=500.0, step=0.005, format="%.3f",
+        key="al_fc",
+        help="The resonant centre frequency the antenna is built for. The "
+             "matcher pins the antenna's natural resonance to this number "
+             "and never shifts it -- so widening the bandwidth slider "
+             "doesn't move where the antenna actually 'is'.")
+    half_width = st.slider(
+        "Wideband half-width (MHz each side of centre)",
+        min_value=0.1, max_value=6.0, value=float(st.session_state["al_hw"]),
+        step=0.05, key="al_hw",
+        help="The matcher TRIES to keep SWR low this far each side of the "
+             "centre.  Reaching it isn't guaranteed -- if the physics says "
+             "no for this element count / taper / height, you'll get the "
+             "best achievable wideband around the centre.  Centre never "
+             "drifts.")
+    band_low = float(fc_input) - float(half_width)
+    band_high = float(fc_input) + float(half_width)
+    st.caption(
+        f"Tuning band → **{band_low:.3f} – {band_high:.3f} MHz** "
+        f"(±{half_width:.2f} MHz about **{fc_input:.3f} MHz**)"
+    )
+
+    target_swr = st.number_input("Target max SWR", value=1.20, min_value=1.01, max_value=3.0,
+                                 step=0.01, format="%.2f", key="al_target")
+    tune_goal = st.selectbox(
+        "Tune goal",
+        ["hybrid", "wideband", "resonant"],
+        format_func=lambda g: (
+            "Hybrid — strong beam + flat wideband match (recommended)" if g == "hybrid"
+            else "Wideband SWR only (flattest across band — can cost gain/F-B)" if g == "wideband"
+            else "Resonant match — high power (R≈50, X≈0 at center)"),
+        key="al_goal",
+        help="Hybrid alternates a BEAM phase (reflector + directors → max gain & "
+             "front-to-back) with a MATCH phase (driven XFRMR/DE/COUPLER cell → "
+             "flat wideband SWR), so the directors are NOT shortened to chase SWR. "
+             "Wideband optimizes SWR alone (can flatten the beam). Resonant drives "
+             "X→0 / R→50 at center for safe high-power (50 kW+) operation.")
+with c2:
+    height_ft = st.number_input("Height (ft)", value=float(setup.get("height_ft", 30.0)),
+                                step=1.0, key="al_height")
+    band_points = st.slider("Band sweep points", 9, 401, 101, step=2,
+                            key="al_points",
+                            help="How many frequency samples to check across the "
+                                 "tuning band -- like the sweep-points knob on a "
+                                 "nanoVNA.  101 is a good default; 201 / 401 give "
+                                 "finer resolution and a longer tune.  More points "
+                                 "= stricter wideband match check.")
+    restarts = st.slider("Search restarts (escape local minima)", 0, 4, 1, key="al_restarts")
+    respect_cell = st.checkbox(
+        "🛡️ Respect my seeded cell (skip stagger seed)",
+        value=True, key="al_respect_cell",
+        help="Default ON.  Skips the wideband stagger seed that would override "
+             "your XFRMR / COUPLER / DE / REF lengths with an OWA-derived "
+             "starting layout.  Keep this ON when you've used the 'Seed cell "
+             "layout' panel on Antenna Setup with your bench-tested numbers -- "
+             "the matcher will then only tune the DIRECTORS around your cell.  "
+             "Uncheck to let the stagger seed help you find a starting layout "
+             "from scratch (overrides whatever you saved).")
+
+st.markdown("#### Tuning method")
+tune_method = st.radio(
+    "How should it tune?",
+    ["matcher", "procedure"],
+    format_func=lambda m: ("Auto-matcher (coordinate descent — fast, hands-off)"
+                           if m == "matcher"
+                           else "Run MY procedure (your selected mini-tunes, step by step)"),
+    key="al_method", horizontal=False,
+    help="Auto-matcher tunes element lengths (and spacings if boom is FREE) to the "
+         "goal above. 'Run my procedure' executes the mini-tune sequence you built "
+         "on the Procedures page, logging and learning each move.")
+sel_proc_name = None
+if tune_method == "procedure":
+    if procs:
+        sel_proc_name = st.selectbox("Procedure to run", [p["name"] for p in procs],
+                                     key="al_proc_pick")
+        _p = next(p for p in procs if p["name"] == sel_proc_name)
+        st.caption("Steps: " + " → ".join(_p.get("steps", [])) if _p.get("steps") else "no steps")
+    else:
+        st.warning("No procedures defined yet — build one on the Procedures page, "
+                   "or use the Auto-matcher.")
+
+polish = st.checkbox("Recover gain / F-B after hitting SWR target", value=True, key="al_polish")
+
+# ---- Element taper (tubing schedule) — set BEFORE tuning -------------------
+STD_TAPER = [[0.625, 36.0], [0.5, 999.0]]   # standard commercial taper (default)
+TAPER_PATH = ROOT / "data/taper_v2.json"
+st.markdown("### ⚙️ Tubing taper  ·  set this BEFORE you tune")
+st.caption("This is the aluminum tube schedule the optimizer and the .nec/.maa "
+           "export use for EVERY element. **Default = standard commercial taper "
+           "(0.625\" → 0.5\").** Change it here for a custom build, hit Save, then "
+           "run AUTO-LEARN. One tube per line: `OD_inches, section_length_inches`, "
+           "from the element CENTRE out to the TIP; use a big length (e.g. 999) for "
+           "the piece that runs to the tip.")
+try:
+    _cur_taper_cfg = json.loads(TAPER_PATH.read_text())
+except Exception:
+    _cur_taper_cfg = {"default": STD_TAPER}
+_cur_taper = _cur_taper_cfg.get("default", STD_TAPER)
+_cur_overrides = _cur_taper_cfg.get("overrides", {}) or {}
+_taper_text = "\n".join(f"{od}, {L}" for od, L in _cur_taper)
+new_taper_text = st.text_area("Taper sections (OD_in, length_in — centre → tip)",
+                              value=_taper_text, key="al_taper", height=120)
+_tc1, _tc2 = st.columns(2)
+with _tc1:
+    if st.button("💾 Save taper", key="al_save_taper", use_container_width=True):
+        sched = []
+        for ln in new_taper_text.splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            parts = [p for p in ln.replace("\t", ",").split(",") if p.strip()]
+            if len(parts) >= 2:
+                sched.append([float(parts[0]), float(parts[1])])
+        if sched:
+            _save = {"default": sched}
+            if _cur_overrides:                # preserve per-element overrides
+                _save["overrides"] = _cur_overrides
+            TAPER_PATH.write_text(json.dumps(_save, indent=2))
+            st.cache_data.clear()
+            st.success(f"Saved taper: {sched}  (re-run AUTO-LEARN to tune for it)")
+            st.rerun()
+        else:
+            st.error("Could not parse any 'OD, length' lines.")
+with _tc2:
+    if st.button("↩️ Reset to standard commercial (0.625\"/0.5\")",
+                 key="al_reset_taper", use_container_width=True):
+        TAPER_PATH.write_text(json.dumps({"default": STD_TAPER}, indent=2))
+        st.cache_data.clear()
+        st.success("Taper reset to standard commercial 0.625\"/0.5\" "
+                   "(per-element overrides cleared).")
+        st.rerun()
+
+# ---- Per-element taper overrides ------------------------------------------
+# Lets the user run thinner tubing on the directors (typical: 0.5"/0.375") than
+# on the driven cell, exactly like commercial Yagis.  Each override fully
+# REPLACES the default schedule for that one element; leave a field blank to
+# inherit the default above.  Overrides are saved into taper_v2.json and the
+# whole engine (.nec, .maa, optimizer, cut sheet, report) picks them up
+# automatically.
+with st.expander("🧵 Per-element taper overrides "
+                 "(directors thinner than the driven cell, etc.)",
+                 expanded=bool(_cur_overrides)):
+    st.caption("Each override fully replaces the default schedule for that "
+               "one element.  Leave a field BLANK to keep the default.  Format "
+               "(one tube per line): `OD_inches, section_length_inches` from "
+               "the element CENTRE out to the TIP.")
+    _names = [str(e["name"]).upper() for e in geo["elements"]]
+    _ov_inputs = {}
+    _ocols = st.columns(min(3, len(_names)) or 1)
+    for i, name in enumerate(_names):
+        with _ocols[i % len(_ocols)]:
+            cur = _cur_overrides.get(name)
+            txt = "\n".join(f"{od}, {L}" for od, L in cur) if cur else ""
+            _ov_inputs[name] = st.text_area(
+                f"`{name}`",
+                value=txt, key=f"al_ov_{name}", height=88,
+                placeholder="(blank = use default above)",
+            )
+    if st.button("💾 Save per-element overrides", key="al_save_overrides",
+                 use_container_width=True):
+        new_overrides = {}
+        for name, txt in _ov_inputs.items():
+            sched = []
+            for ln in (txt or "").splitlines():
+                ln = ln.strip()
+                if not ln:
+                    continue
+                parts = [p for p in ln.replace("\t", ",").split(",") if p.strip()]
+                if len(parts) >= 2:
+                    try:
+                        sched.append([float(parts[0]), float(parts[1])])
+                    except ValueError:
+                        pass
+            if sched:
+                new_overrides[name] = sched
+        save = {"default": _cur_taper}
+        if new_overrides:
+            save["overrides"] = new_overrides
+        TAPER_PATH.write_text(json.dumps(save, indent=2))
+        st.cache_data.clear()
+        if new_overrides:
+            st.success(f"Saved {len(new_overrides)} per-element override(s): "
+                       f"{', '.join(new_overrides)}.  Re-run AUTO-LEARN to "
+                       f"tune for the new taper combination.")
+        else:
+            st.success("All per-element overrides cleared.")
+        st.rerun()
+
+st.markdown("**Starting geometry (current)**  ·  build/reseed on the Antenna Setup page")
+n_dirs_now = sum(1 for e in geo["elements"] if str(e["name"]).upper().startswith("DIR"))
+
+
+gcols = st.columns(min(4, len(geo["elements"])) or 1)
+for i, e in enumerate(geo["elements"]):
+    with gcols[i % len(gcols)]:
+        st.caption(f"`{e['name']}`  pos {fmt_in(e['position_in'])}  "
+                   f"len {fmt_in(e['length_in'])}")
+
+with st.expander("📤 Export CURRENT geometry to .nec / .maa", expanded=False):
+    st.caption("Export the current geometry as-is (no tuning needed) to open in "
+               "nec2c / 4nec2 / xnec2c (.nec) or MMANA-GAL (.maa).")
+    rules_cur = json.loads(json.dumps(rules))
+    rules_cur["global"]["freq_mhz_low"] = float(band_low)
+    rules_cur["global"]["freq_mhz_high"] = float(band_high)
+    rules_cur["global"]["freq_mhz_center"] = float(fc_input)
+    try:
+        nec_cur = exporters.to_nec(geo["elements"], rules_cur,
+                                   height_ft=float(height_ft), points=int(band_points))
+        maa_cur = exporters.to_maa(geo["elements"], rules_cur,
+                                   height_ft=float(height_ft),
+                                   center_mhz=float(fc_input))
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.download_button("Download .nec", data=nec_cur,
+                               file_name="hybrid_auto7_current.nec", mime="text/plain",
+                               use_container_width=True, key="al_dl_nec_cur")
+        with ec2:
+            st.download_button("Download .maa", data=maa_cur,
+                               file_name="hybrid_auto7_current.maa", mime="text/plain",
+                               use_container_width=True, key="al_dl_maa_cur")
+    except Exception as _ex:
+        st.warning(f"Export unavailable: {_ex}")
+
+st.info(f"**Active tubing taper:** `{v2_runner.taper_signature()}`  — every tune "
+        f"and export uses THIS schedule. Edit it in the ⚙️ Element taper box above "
+        f"if it doesn't match your real elements, then re-run.")
+
+st.markdown("---")
+
+# ---- BACKGROUND-THREAD TUNE RUNNER -----------------------------------------
+# User: 'when I leave the tuning page and view other pages while its tuning
+# it stops the whole tuning process.. stop this from happening.. make it only
+# stop when i press stop.. this is crazy'.
+#
+# Streamlit reruns each page's script from scratch on every render, so a
+# tune that lives in the page's render thread dies the moment the user
+# navigates away.  We move the tune into a daemon thread that lives in the
+# Python process across page navigations and write its state into
+# st.session_state (which IS preserved per session).  The page polls and
+# re-renders the live status every 500 ms while the thread is alive.  A
+# Stop button sets a threading.Event the matcher's on_move callback checks;
+# when set, on_move raises match_opt.TuneStopped which auto_learn catches
+# and returns the best-so-far geometry.
+TUNE_STATE_KEY = "al_tune_state"
+if TUNE_STATE_KEY not in st.session_state:
+    st.session_state[TUNE_STATE_KEY] = {
+        "thread": None,
+        "stop_event": None,
+        "live": {"n": 0, "best": float("inf")},
+        "log_lines": [],
+        "result": None,
+        "error": None,
+        "started_at": None,
+        "elapsed": None,
+    }
+TS = st.session_state[TUNE_STATE_KEY]
+
+def _ts_running():
+    t = TS.get("thread")
+    return bool(t and t.is_alive())
+
+
+# ---- LIVE STATUS PANEL (rendered on every page render, including when idle)
+st.markdown("### 📡 Live tuning status")
+live_cols = st.columns(8)
+ph_move = live_cols[0]
+ph_csw  = live_cols[1]
+ph_r    = live_cols[2]
+ph_x    = live_cols[3]
+ph_rl   = live_cols[4]
+ph_mx   = live_cols[5]
+ph_best = live_cols[6]
+ph_probe = live_cols[7]
+ph_dof  = st.container()
+_live = TS.get("live", {}) or {}
+_n = int(_live.get("n", 0))
+ph_move.metric("Move #", f"{_n:,}")
+def _fmt(key, fmt, suffix=""):
+    v = _live.get(key)
+    return f"{v:{fmt}}{suffix}" if isinstance(v, (int, float)) else "—"
+ph_csw.metric ("Centre SWR",       _fmt("csw",  ".3f", ":1"))
+ph_r.metric   ("Centre R (Ω)",     _fmt("cr",   ".2f"))
+ph_x.metric   ("Centre X (Ω)",     _fmt("cx",   "+.2f"))
+ph_rl.metric  ("Return loss (dB)", _fmt("rl",   ".1f"))
+ph_mx.metric  ("Band-max SWR",     _fmt("mx",   ".3f"))
+_best = _live.get("best")
+ph_best.metric("Best band-max so far",
+               f"{_best:.3f}" if isinstance(_best, (int, float)) and _best < 99 else "—")
+ph_probe.metric("Probes since improvement",
+                f"{_live.get('probes_since_improve', 0):,}",
+                help="How many rejected probe candidates the matcher has tried "
+                     "since the last accepted (improving) move.  When this "
+                     "climbs past ~200 with no improvement the matcher is "
+                     "stuck -- hit STOP and try different settings.")
+if _live.get("dof"):
+    ph_dof.caption(("✅ ACCEPTED " if _live.get("accepted") else "❌ rejected ")
+                   + f"`{_live['dof']}` → {_live.get('value', 0):.3f}")
+elif _ts_running():
+    ph_dof.caption("Waiting for the first matcher move…")
+else:
+    ph_dof.caption("Idle.  Click RUN TUNE + LEARN below to start.")
+
+# ---- Log box ---------------------------------------------------------------
+log_box = st.empty()
+log_box.code("\n".join(TS.get("log_lines", [])[-60:]) or "(no log yet)",
+             language="text")
+
+# ---- Buttons --------------------------------------------------------------
+btn_run, btn_stop = st.columns(2)
+running_now = _ts_running()
+
+if running_now:
+    btn_run.button("RUN TUNE + LEARN", disabled=True,
+                   use_container_width=True, key="al_run_disabled",
+                   help="A tune is already running.  Hit STOP to abort.")
+    if btn_stop.button("⏸️ STOP TUNE", type="secondary",
+                       use_container_width=True, key="al_stop"):
+        if TS.get("stop_event") is not None:
+            TS["stop_event"].set()
+            st.warning("⏸️ Stop requested.  Matcher will exit on the next "
+                       "move and return the best geometry it has found.")
+else:
+    btn_stop.button("⏸️ STOP TUNE", disabled=True, use_container_width=True,
+                    key="al_stop_disabled")
+    start_clicked = btn_run.button("RUN TUNE + LEARN", type="primary",
+                                   use_container_width=True, key="al_run")
+    if start_clicked:
+        if band_high <= band_low:
+            st.error("Band high must be greater than band low.")
+            st.stop()
+
+        # Build rules_run + cfg here (in the render thread) so the background
+        # thread doesn't have to touch Streamlit state during setup.
+        rules_run = json.loads(json.dumps(rules))
+        rules_run["global"]["freq_mhz_low"] = float(band_low)
+        rules_run["global"]["freq_mhz_high"] = float(band_high)
+        rules_run["global"]["freq_mhz_center"] = float(fc_input)
+        # When the user has explicitly seeded a cell layout via the Antenna
+        # Setup panel and checked 'respect my seeded cell', tell the matcher
+        # to SKIP the stagger seed (which would otherwise override their
+        # XFRMR/COUPLER lengths with the OWA-style defaults).
+        rules_run["global"]["respect_seeded_cell"] = bool(respect_cell)
+        if setup.get("boom_mode") == "fixed" and setup.get("boom_length_in"):
+            rules_run["global"]["boom_max_in"] = float(setup["boom_length_in"])
+        else:
+            rules_run["global"]["boom_max_in"] = 0.0
+
+        use_matcher = (tune_method == "matcher")
+        if use_matcher:
+            procedure = procs[0] if procs else {"name": "matcher", "steps": []}
+        else:
+            procedure = next((p for p in procs if p["name"] == sel_proc_name),
+                             {"name": "procedure", "steps": []})
+
+        cfg = LearnConfig(
+            project_name=str(setup.get("antenna_name", "current_geometry")).strip()
+                         or "current_geometry",
+            height_ft=float(height_ft),
+            swr_profile="wideband_1.2",
+            target_max_swr=float(target_swr),
+            band_sweep_points=int(band_points),
+            max_generations=int(restarts) + 1,
+            use_matcher=use_matcher,
+            polish_gain=bool(polish),
+            tune_goal=str(tune_goal),
+            tune_spacings=((str(setup.get("boom_mode", "fixed")) == "free")
+                           or bool(setup.get("boom_length_in"))),
+            grounded=(str(setup.get("grounding", "all_insulated"))
+                      in ("grounded", "all_grounded", "cell_insulated")),
+            grounding={
+                "insulated": "all_insulated",
+                "grounded": "all_grounded",
+            }.get(setup.get("grounding"),
+                  str(setup.get("grounding", "all_insulated"))),
+            boom_diameter_in=float(setup.get("boom_diameter_in", 1.5)),
+        )
+        # Snapshot inputs the thread will consume.
+        thread_inputs = {
+            "elements": json.loads(json.dumps(geo["elements"])),
+            "rules": rules_run,
+            "minis": minis,
+            "procedure": procedure,
+            "cfg": cfg,
+            "band_low": float(band_low),
+            "band_high": float(band_high),
+            "band_points": int(band_points),
+            "tune_goal": str(tune_goal),
+            "height_ft": float(height_ft),
+            "fc_input": float(fc_input),
+        }
+
+        # Reset live state.
+        TS["live"] = {"n": 0, "best": float("inf")}
+        TS["log_lines"] = []
+        TS["result"] = None
+        TS["error"] = None
+        TS["started_at"] = datetime.datetime.now()
+        TS["elapsed"] = None
+        stop_event = threading.Event()
+        TS["stop_event"] = stop_event
+
+        # Import inside the closure so the thread carries the right modules.
+        from hyagi.match_opt import TuneStopped
+
+        def _log_thread(msg):
+            TS["log_lines"].append(str(msg))
+
+        def _live_thread(m):
+            # Update live state on EVERY move so the move counter stays
+            # accurate, but DISPLAY-side fields (R/X/SWR/RL/mx) AND the
+            # 'best band-max so far' tracker only refresh on ACCEPTED moves.
+            # Rejected probes briefly produce attractive band-max values
+            # (lower) that the matcher's objective correctly rejects because
+            # other priorities (X / RL / centre) got worse.  Showing those
+            # values in the 'best' tile confuses the user into thinking
+            # the matcher 'threw away' a good result -- when in reality the
+            # matcher kept the geometry that's better overall per their
+            # priority ladder.
+            TS["live"]["n"] = TS["live"].get("n", 0) + 1
+            mx = float(m.get("band_max_swr", 0))
+            accepted = bool(m.get("accepted"))
+            if accepted:
+                csw = float(m.get("center_swr", 0))
+                cr = float(m.get("center_r", 0))
+                cx = float(m.get("center_x", 0))
+                rl = (99.0 if csw <= 1.0 else
+                      -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+                TS["live"].update({
+                    "csw": csw, "cr": cr, "cx": cx, "rl": rl, "mx": mx,
+                    "dof": str(m.get("dof", "?")),
+                    "value": float(m.get("value", 0)),
+                    "accepted": True,
+                    "probes_since_improve": 0,
+                })
+                # ONLY accepted moves can lower "best band-max so far" -- so
+                # the tile always reflects what the matcher actually kept,
+                # never a tantalising-but-rejected probe value.
+                if mx < TS["live"].get("best", float("inf")):
+                    TS["live"]["best"] = mx
+            else:
+                # Track probes-since-improvement so the user can see search
+                # effort even though no display number is changing.
+                TS["live"]["probes_since_improve"] = (
+                    int(TS["live"].get("probes_since_improve", 0)) + 1)
+            if stop_event.is_set():
+                raise TuneStopped()
+
+        def _tune_thread_body(ti=thread_inputs):
+            try:
+                result = run_learning(
+                    ti["elements"], ti["rules"], ti["minis"], ti["procedure"],
+                    ti["cfg"], log_fn=_log_thread, on_move=_live_thread,
+                )
+                report = perf_report.analyze(
+                    result["final_geometry"], ti["rules"],
+                    height_ft=ti["height_ft"])
+                m = result["final_metrics"]
+                csw = float(m.get("center_swr", 0.0))
+                crl = (99.0 if csw <= 1.0 else
+                       -20.0 * _math.log10((csw - 1.0) / (csw + 1.0)))
+                TS["result"] = {
+                    "geometry": result["final_geometry"],
+                    "band_max": m.get("band_max_swr", m.get("max_swr", 0)),
+                    "gain": m.get("gain_dbi", 0),
+                    "fb": m.get("fb_db", 0),
+                    "center_r": float(m.get("center_r", 0.0)),
+                    "center_x": float(m.get("center_x", 0.0)),
+                    "center_swr": csw,
+                    "center_rl": crl,
+                    "goal": ti["tune_goal"],
+                    "score": result["final_score"],
+                    "low": float(ti["rules"]["global"].get("freq_mhz_low",
+                                                          ti["band_low"])),
+                    "high": float(ti["rules"]["global"].get("freq_mhz_high",
+                                                            ti["band_high"])),
+                    "requested_low": ti["band_low"],
+                    "requested_high": ti["band_high"],
+                    "points": ti["band_points"], "height": ti["height_ft"],
+                    "report": report, "taper": v2_runner.taper_signature(),
+                }
+            except Exception as ex:
+                TS["error"] = f"{type(ex).__name__}: {ex}"
+                TS["log_lines"].append(f"[error] {TS['error']}")
+            finally:
+                if TS.get("started_at"):
+                    TS["elapsed"] = (datetime.datetime.now()
+                                     - TS["started_at"]).total_seconds()
+
+        t = threading.Thread(target=_tune_thread_body, daemon=True,
+                             name="hybrid_auto7_tune")
+        if add_script_run_ctx is not None:
+            add_script_run_ctx(t)
+        TS["thread"] = t
+        t.start()
+        st.success("Tune started in the background.  Navigate freely — it "
+                   "keeps running until you press STOP or it finishes.")
+        time.sleep(0.1)
+        st.rerun()
+
+# ---- Auto-refresh while a tune is running ---------------------------------
+# Pulls fresh live state from the daemon thread every 500 ms.  When the user
+# navigates away, this loop dies; the thread keeps running and the live state
+# is restored when they navigate back.
+if _ts_running():
+    time.sleep(0.5)
+    st.rerun()
+
+# ---- Pull a freshly finished thread result into al_result -----------------
+# When the daemon thread finished since the last render, hand the result to
+# the existing 'al_result' section below so the rest of the page works
+# unchanged.
+if TS.get("result") and not st.session_state.get("al_result_id") == id(TS["result"]):
+    res = dict(TS["result"])
+    res["elapsed"] = TS.get("elapsed") or 0.0
+    st.session_state["al_result"] = res
+    st.session_state["al_result_id"] = id(TS["result"])
+
+if TS.get("error"):
+    st.error(f"Tune failed: {TS['error']}")
+
+
+res = st.session_state.get("al_result")
+if res:
+    st.markdown("### Result")
+    # Guard against a STALE result: if the current geometry no longer matches the
+    # one this result was tuned for (e.g. you reseeded a different element count,
+    # adopted/pulled a new geometry, or never adopted this run), the result's
+    # numbers and .nec/.maa export belong to a DIFFERENT antenna. Make that loud.
+    res_names = [e["name"] for e in res["geometry"]]
+    cur_names = [e["name"] for e in geo["elements"]]
+    if res_names != cur_names:
+        st.error(
+            f"⚠️ This result is from a PREVIOUS run ({len(res_names)} elements: "
+            f"{', '.join(res_names)}) and does NOT match your current geometry "
+            f"({len(cur_names)} elements: {', '.join(cur_names)}). Its metrics and "
+            f"the .nec/.maa export below are for that other antenna — adopt it, or "
+            f"clear it and re-run AUTO-LEARN on your current geometry."
+        )
+        if st.button("Clear stale result", key="al_clear_stale"):
+            del st.session_state["al_result"]
+            st.rerun()
+    ok = res["band_max"] <= float(target_swr) + 1e-6
+    (st.success if ok else st.warning)(
+        f"band-max SWR {res['band_max']:.3f}  ·  gain {res['gain']:.2f} dBi  ·  "
+        f"F/B {res['fb']:.2f} dB  ·  score {res['score']:+.1f}  ·  {res['elapsed']:.0f}s"
+    )
+
+    # Auto-fit verdict: if the matcher narrowed the band to meet the target
+    # SWR around the locked centre, tell the user clearly what they got.
+    req_lo, req_hi = res.get("requested_low"), res.get("requested_high")
+    ach_lo, ach_hi = res["low"], res["high"]
+    if (req_lo is not None and req_hi is not None
+            and (abs(req_lo - ach_lo) > 5e-3 or abs(req_hi - ach_hi) > 5e-3)):
+        req_hw = 0.5 * (req_hi - req_lo)
+        ach_hw = 0.5 * (ach_hi - ach_lo)
+        st.info(
+            f"🤖 **Auto-fit narrowed the band** to keep your centre locked and "
+            f"meet your SWR target. You asked for ±{req_hw:.2f} MHz "
+            f"({req_lo:.3f}–{req_hi:.3f}); achievable was "
+            f"**±{ach_hw:.2f} MHz** ({ach_lo:.3f}–{ach_hi:.3f}). "
+            f"For wider bandwidth on this design, add directors / try a fatter "
+            f"taper, or raise the Target max SWR."
+        )
+    if res_names == cur_names and res["geometry"] != geo["elements"]:
+        st.warning("📌 This tune is **NOT saved yet.** Click **Adopt tuned geometry "
+                   "as current** below to make it your antenna — the **Report** page "
+                   "(and the next warm-start) reads the ADOPTED geometry, not this panel.")
+    cc1, cc2, cc3, cc4 = st.columns(4)
+    cc1.metric("Center R", f"{res.get('center_r', 0):.1f} Ω")
+    cc2.metric("Center X (reactance)", f"{res.get('center_x', 0):+.2f} Ω",
+               help="For high power this must be ≈0")
+    cc3.metric("Center SWR", f"{res.get('center_swr', 0):.3f}")
+    cc4.metric("Return loss", f"{res.get('center_rl', 0):.1f} dB")
+    st.caption(f"Tuned on tubing taper: `{res.get('taper', '?')}`")
+
+    curve, _mx, _av = v2_runner.band_swr_curve(
+        res["geometry"], res["low"], res["high"], res["points"], res["height"])
+    if curve:
+        import pandas as pd
+        df = pd.DataFrame({"freq_MHz": [c[0] for c in curve], "SWR": [c[3] for c in curve]})
+        st.line_chart(df, x="freq_MHz", y="SWR", height=240)
+
+    rep = res.get("report") or {}
+    if rep and "error" not in rep:
+        def _bw(b):
+            return f"{b[0]:.3f}–{b[1]:.3f} MHz  ({b[2]:.0f} kHz)" if b else "— (never ≤ this)"
+        st.markdown("### Full performance report")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Forward gain", f"{rep['gain_dbi']:.2f} dBi", f"{rep['gain_dbd']:.2f} dBd")
+        k2.metric("Front / Back", f"{rep['fb_db']:.2f} dB", f"F/R {rep['fr_db']:.2f} dB")
+        k3.metric("Take-off angle", f"{rep['takeoff_deg']:.1f}°", f"@ {rep['height_ft']:.0f} ft")
+        k4.metric("Band-max SWR", f"{rep['band_max_swr']:.3f}", f"min {rep['min_swr']:.3f} @ {rep['min_swr_mhz']:.3f} MHz")
+
+        rows = [
+            ("Gain over real ground", f"{rep['gain_dbi']:.2f} dBi  ({rep['gain_dbd']:.2f} dBd)"),
+            ("Gain in free space", f"{rep['gain_free_space_dbi']:.2f} dBi"),
+            ("Ground-reflection gain", f"+{rep['ground_gain_db']:.2f} dB"),
+            ("Power multiplier", f"{rep['power_mult_isotropic']:.1f}× isotropic   ·   {rep['power_mult_dipole']:.2f}× a dipole"),
+            ("Front-to-back / front-to-rear", f"{rep['fb_db']:.2f} dB  /  {rep['fr_db']:.2f} dB"),
+            ("Azimuth beamwidth (−3 dB)", f"{rep['az_beamwidth_deg']}°" if rep['az_beamwidth_deg'] else "—"),
+            ("Elevation beamwidth (−3 dB)", f"{rep['el_beamwidth_deg']}°" if rep['el_beamwidth_deg'] else "—"),
+            ("Take-off (peak elevation) angle", f"{rep['takeoff_deg']:.1f}°"),
+            ("Radiation efficiency", f"{rep['efficiency_pct']:.1f}%  (lossless-wire model)" if rep['efficiency_pct'] is not None else "—"),
+            ("Antenna height / boom length", f"{rep['height_ft']:.0f} ft  /  {fmt_in(rep['boom_in'])}"),
+            ("Resonant (min-SWR) freq", f"{rep['min_swr']:.3f}:1 @ {rep['min_swr_mhz']:.3f} MHz"),
+            ("In-band max SWR", f"{rep['band_max_swr']:.3f}:1  ({rep['band_low_mhz']:.3f}–{rep['band_high_mhz']:.3f} MHz)"),
+            ("Bandwidth ≤ 1.2:1", _bw(rep['bw_swr_1p2'])),
+            ("Bandwidth ≤ 1.5:1", _bw(rep['bw_swr_1p5'])),
+            ("Bandwidth ≤ 2.0:1", _bw(rep['bw_swr_2p0'])),
+        ]
+        md = "| Metric | Value |\n|---|---|\n" + "\n".join(f"| {a} | {b} |" for a, b in rows)
+        st.markdown(md)
+        st.download_button("Download report (JSON)",
+                           data=json.dumps(rep, indent=2),
+                           file_name="auto_learn_report.json",
+                           key="al_dl_report")
+
+    st.markdown("**Tuned geometry**  ·  imperial (ft / in / 16ths)")
+    tuned = sorted(res["geometry"], key=lambda e: float(e["position_in"]))
+    rows_geom = []
+    for i, e in enumerate(tuned):
+        # Spacing to the next element along the boom -- this is what you'd
+        # mark on the boom with a tape measure on construction day.
+        spacing = (float(tuned[i + 1]["position_in"]) - float(e["position_in"])
+                   if i + 1 < len(tuned) else None)
+        rows_geom.append({
+            "Element": e["name"],
+            "Boom position": fmt_in(e["position_in"]),
+            "Overall length (tip-to-tip)": fmt_in(e["length_in"]),
+            "Half-length (centre→tip)": fmt_in(float(e["length_in"]) / 2.0),
+            "Spacing to next": fmt_in(spacing) if spacing is not None else "—",
+        })
+    st.dataframe(rows_geom, hide_index=True, use_container_width=True)
+    boom_in = float(tuned[-1]["position_in"]) - float(tuned[0]["position_in"])
+    st.caption(f"Boom length (REF → last director): **{fmt_in(boom_in)}**")
+
+    a1, a2 = st.columns(2)
+    with a1:
+        if st.button("Adopt tuned geometry as current", use_container_width=True, key="al_adopt"):
+            GEO_PATH.write_text(json.dumps({"elements": res["geometry"]}, indent=2))
+            st.cache_data.clear()
+            st.success("Current geometry updated.")
+    with a2:
+        st.download_button("Download geometry JSON",
+                           data=json.dumps({"elements": res["geometry"]}, indent=2),
+                           file_name="auto_learn_geometry.json",
+                           use_container_width=True, key="al_dl")
+
+    # ---- Open in external simulators (.nec / .maa) -------------------------
+    st.markdown("**Open in external programs**")
+    st.caption("Exports the TUNED antenna so you can verify / view it elsewhere. "
+               "`.nec` is the same tapered-aluminium model the optimizer used "
+               "(nec2c / 4nec2 / xnec2c). `.maa` is MMANA-GAL — element span on Y, "
+               "boom on X, height on Z; the DE is voltage-fed at its centre. "
+               "Each element keeps its stepped tubing so the resonance matches.")
+    rules_exp = json.loads(json.dumps(rules))
+    rules_exp["global"]["freq_mhz_low"] = res["low"]
+    rules_exp["global"]["freq_mhz_high"] = res["high"]
+    try:
+        nec_txt = exporters.to_nec(res["geometry"], rules_exp,
+                                   height_ft=res["height"], points=res["points"])
+        maa_txt = exporters.to_maa(res["geometry"], rules_exp,
+                                   height_ft=res["height"],
+                                   center_mhz=float(glb.get("freq_mhz_center", 27.195)))
+        e1, e2 = st.columns(2)
+        with e1:
+            st.download_button("Download .nec (NEC-2 deck)", data=nec_txt,
+                               file_name="hybrid_auto7_tuned.nec", mime="text/plain",
+                               use_container_width=True, key="al_dl_nec")
+        with e2:
+            st.download_button("Download .maa (MMANA-GAL)", data=maa_txt,
+                               file_name="hybrid_auto7_tuned.maa", mime="text/plain",
+                               use_container_width=True, key="al_dl_maa")
+        with st.expander("Preview .maa", expanded=False):
+            st.code(maa_txt, language="text")
+    except Exception as _ex:
+        st.warning(f"Export unavailable: {_ex}")
+
+# ---- Learning memory (what it has learned for THIS design) -----------------
+st.markdown("---")
+st.markdown("### 🧠 Learning memory")
+st.caption("Every candidate move (good AND bad) is saved per design signature "
+           "(taper + band + height + element count). New runs warm-start each "
+           "parameter from its best-known value and steer away from bad ones.")
+try:
+    import sqlite3
+    from hyagi import v2_runner as _vr
+    DB = ROOT / "data/auto7_history.db"
+    con = sqlite3.connect(str(DB))
+    con.execute("CREATE TABLE IF NOT EXISTS learned_moves (id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "created_utc TEXT, signature TEXT, dof TEXT, value REAL, band_max_swr REAL, accepted INTEGER)")
+    grand = con.execute("SELECT COUNT(*) FROM learned_moves").fetchone()[0]
+    n_designs = con.execute("SELECT COUNT(DISTINCT signature) FROM learned_moves").fetchone()[0]
+    n_el = len(geo["elements"])
+    sig_like = f"{_vr.taper_signature()}|%h{float(height_ft):.0f}|n{n_el}"
+    total = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ?", (sig_like,)).fetchone()[0]
+    acc = con.execute("SELECT COUNT(*) FROM learned_moves WHERE signature LIKE ? AND accepted=1", (sig_like,)).fetchone()[0]
+    st.caption(f"Active design: `{_vr.taper_signature()} | h{float(height_ft):.0f} | {n_el} elements`")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total memory (all designs)", grand, f"{n_designs} design(s)")
+    c2.metric("This design — moves", total)
+    c3.metric("This design — good moves", acc)
+    rows = con.execute("""
+        SELECT dof, value, band_max_swr FROM learned_moves
+        WHERE signature LIKE ? AND accepted=1
+          AND band_max_swr=(SELECT MIN(band_max_swr) FROM learned_moves x
+                            WHERE x.signature=learned_moves.signature
+                              AND x.dof=learned_moves.dof AND x.accepted=1)
+        GROUP BY dof ORDER BY dof
+    """, (sig_like,)).fetchall()
+    con.close()
+    if rows:
+        st.markdown("**Best value learned for each parameter (this design):**")
+        md = "| Parameter | Best value | gave band-max SWR |\n|---|---|---|\n" + \
+             "\n".join(f"| {d} | {v:.2f} | {s:.3f} |" for d, v, s in rows)
+        st.markdown(md)
+    elif grand:
+        st.info(f"Memory holds {grand} moves from other designs. This exact "
+                f"taper/height/element-count has none yet — run AUTO-LEARN to build it.")
+    else:
+        st.info("No learned moves yet — run AUTO-LEARN to start the memory.")
+except Exception as e:
+    st.caption(f"(learning memory unavailable: {e})")

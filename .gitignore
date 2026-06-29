@@ -86,3 +86,9 @@ android-sdk/
 credentials.json
 *.key
 .credentials
+
+# Antenna app patterns (merged from wideband-matcher)
+*.nec
+*.db
+yagi_runs/
+yagi_seeds/

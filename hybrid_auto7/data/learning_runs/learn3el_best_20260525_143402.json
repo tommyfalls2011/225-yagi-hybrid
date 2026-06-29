@@ -1,0 +1,45 @@
+{
+  "elements": [
+    {
+      "name": "REF",
+      "position_in": 0.0,
+      "length_in": 218.768891
+    },
+    {
+      "name": "XFRMR",
+      "position_in": 23.0,
+      "length_in": 198.508549
+    },
+    {
+      "name": "DE",
+      "position_in": 44.0,
+      "length_in": 213.508549
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 53.0,
+      "length_in": 192.508549
+    },
+    {
+      "name": "DIR1",
+      "position_in": 114.0,
+      "length_in": 189.508549
+    }
+  ],
+  "score": 13368.989048367295,
+  "min_swr": 1.008206,
+  "max_swr": 1.092906,
+  "avg_swr": 1.034821,
+  "center_r": 49.26359805993215,
+  "center_x": 0.21558635266877071,
+  "center_swr": 1.0155804573469072,
+  "avg_r": 48.949934,
+  "avg_abs_x": 0.363892,
+  "worst_return_loss_db": 27.054119215782197,
+  "nec_file": "/home/sma-ububtu24/scripts/hybrid_auto7/models/learn3el_best_20260525_143402.nec",
+  "real_gain_dbi": 13.03,
+  "front_back_db": 24.86,
+  "gain_dbd": 10.879999999999999,
+  "power_mult_vs_dipole": 12.246161992650483,
+  "power_mult_vs_isotropic": 20.090928126087277
+}

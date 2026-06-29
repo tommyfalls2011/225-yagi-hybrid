@@ -1,0 +1,35 @@
+
+Build sheet for run id=3511
+==========================
+Stage:              dir3_normal
+DE position:        48.000 in from REF
+XFRMR-DE spacing:   8.500 in
+DE-Coupler spacing: 36.000 in
+XFRMR length:       199.000 in
+Coupler length:     173.000 in
+DE length:          210.000 in
+
+SWR summary
+-----------
+Min SWR:            1.159
+Max SWR:            1.399
+Avg SWR:            1.232
+Worst return loss:  15.58 dB
+Points <= 1.5:      45
+Points <= 2.0:      45
+
+Elements
+--------
+Element    Position from REF in   Spacing in   Length in   Half length in
+REF                     0.000        0.000     218.000          109.000
+XFRMR                  39.500       39.500     199.000           99.500
+DE                     48.000        8.500     210.000          105.000
+COUPLER                84.000       36.000     173.000           86.500
+DIR1                  132.500       48.500     194.500           97.250
+DIR2                  242.500      110.000     188.000           94.000
+DIR3                  335.000       92.500     182.500           91.250
+
+Taper model
+-----------
+5/8 inch OD center section, 36 inches each side from boom center.
+1/2 inch OD outer sections from 36 inches to each tip.

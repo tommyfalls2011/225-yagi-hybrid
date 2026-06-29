@@ -1,0 +1,8 @@
+{
+  "n_directors": 3,
+  "boom_mode": "fixed",
+  "boom_length_in": null,
+  "height_ft": 30.0,
+  "boom_diameter_in": 1.5,
+  "grounding": "insulated"
+}

@@ -1,0 +1,269 @@
+{
+  "elapsed_sec": 4094.202804327011,
+  "args": {
+    "trials": 25,
+    "top_k": 5,
+    "use_kb": false,
+    "seed": null,
+    "mode": "yagi",
+    "boom_ft": 30.0,
+    "n_directors": 4,
+    "lock_best_cell": false,
+    "label": "30ft_6el_yagi"
+  },
+  "kb_state_after": {
+    "good_cells": [
+      {
+        "de_pos": 71.7,
+        "xfrmr_pos": 58.7,
+        "coupler_pos": 84.7,
+        "score": 2314.882503673647,
+        "max_swr": 2.334686,
+        "center_r": 32.03597496571174,
+        "center_x": 20.443901605204655,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:26:28+00:00"
+      },
+      {
+        "de_pos": 71.2,
+        "xfrmr_pos": 58.2,
+        "coupler_pos": 84.2,
+        "score": 2188.5541397398824,
+        "max_swr": 2.349375,
+        "center_r": 31.808463130667512,
+        "center_x": 20.517398530545776,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:26:32+00:00"
+      },
+      {
+        "de_pos": 69.8,
+        "xfrmr_pos": 56.8,
+        "coupler_pos": 82.8,
+        "score": 1810.8296193376632,
+        "max_swr": 2.391028,
+        "center_r": 31.166451142167638,
+        "center_x": 20.703694979967775,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:25:42+00:00"
+      },
+      {
+        "de_pos": 67.3,
+        "xfrmr_pos": 54.3,
+        "coupler_pos": 80.3,
+        "score": 1179.1368356573541,
+        "max_swr": 2.467483,
+        "center_r": 30.001789439746634,
+        "center_x": 20.962613986061886,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:26:07+00:00"
+      },
+      {
+        "de_pos": 69.3,
+        "xfrmr_pos": 56.3,
+        "coupler_pos": 82.3,
+        "score": 1684.4966020093361,
+        "max_swr": 2.406099,
+        "center_r": 30.93538407342269,
+        "center_x": 20.763145057804536,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:34:11+00:00"
+      },
+      {
+        "de_pos": 65.9,
+        "xfrmr_pos": 52.900000000000006,
+        "coupler_pos": 78.9,
+        "score": 801.345783350194,
+        "max_swr": 2.511575,
+        "center_r": 29.3394412014568,
+        "center_x": 21.06475262614605,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:34:03+00:00"
+      },
+      {
+        "de_pos": 65.1,
+        "xfrmr_pos": 52.099999999999994,
+        "coupler_pos": 78.1,
+        "score": 551.1586060238573,
+        "max_swr": 2.53722,
+        "center_r": 28.95771751041458,
+        "center_x": 21.108857405945944,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:34:24+00:00"
+      },
+      {
+        "de_pos": 62.7,
+        "xfrmr_pos": 49.7,
+        "coupler_pos": 75.7,
+        "score": -439.5316468195763,
+        "max_swr": 2.616308,
+        "center_r": 27.798598203809807,
+        "center_x": 21.17703524500547,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:33:42+00:00"
+      },
+      {
+        "de_pos": 70.6,
+        "xfrmr_pos": 57.599999999999994,
+        "coupler_pos": 83.6,
+        "score": 2060.9592679913753,
+        "max_swr": 2.367129,
+        "center_r": 31.53421344963731,
+        "center_x": 20.60078596057235,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:52:38+00:00"
+      },
+      {
+        "de_pos": 68.1,
+        "xfrmr_pos": 55.099999999999994,
+        "coupler_pos": 81.1,
+        "score": 1429.2869804228362,
+        "max_swr": 2.442712,
+        "center_r": 30.377014652854594,
+        "center_x": 20.89027368000004,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:52:43+00:00"
+      },
+      {
+        "de_pos": 66.8,
+        "xfrmr_pos": 53.8,
+        "coupler_pos": 79.8,
+        "score": 1052.7875144017219,
+        "max_swr": 2.483119,
+        "center_r": 29.766067857999527,
+        "center_x": 21.002696846227416,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:52:22+00:00"
+      },
+      {
+        "de_pos": 66.6,
+        "xfrmr_pos": 53.599999999999994,
+        "coupler_pos": 79.6,
+        "score": 1050.2463437423025,
+        "max_swr": 2.489408,
+        "center_r": 29.671520205632717,
+        "center_x": 21.01761379027588,
+        "verdict": "OK",
+        "tried_at": "2026-05-23T20:52:55+00:00"
+      }
+    ],
+    "bad_starts": [
+      {
+        "de_pos": 39.2,
+        "reason": "swr_explode",
+        "max_swr": 3.755636,
+        "logged_at": "2026-05-23T20:25:30+00:00"
+      },
+      {
+        "de_pos": 41.4,
+        "reason": "swr_explode",
+        "max_swr": 3.59675,
+        "logged_at": "2026-05-23T20:25:51+00:00"
+      },
+      {
+        "de_pos": 50.9,
+        "reason": "swr_explode",
+        "max_swr": 3.072878,
+        "logged_at": "2026-05-23T20:26:03+00:00"
+      },
+      {
+        "de_pos": 45.7,
+        "reason": "swr_explode",
+        "max_swr": 3.333166,
+        "logged_at": "2026-05-23T20:26:24+00:00"
+      },
+      {
+        "de_pos": 43.5,
+        "reason": "swr_explode",
+        "max_swr": 3.461273,
+        "logged_at": "2026-05-23T20:33:54+00:00"
+      },
+      {
+        "de_pos": 48.0,
+        "reason": "swr_explode",
+        "max_swr": 3.211612,
+        "logged_at": "2026-05-23T20:34:36+00:00"
+      }
+    ],
+    "best_full_designs": [
+      {
+        "from_cell_de_pos": 70.6,
+        "mode": "yagi",
+        "boom_ft": 30.0,
+        "n_directors": 4,
+        "label": "30ft_6el_yagi",
+        "final_de_pos": 70.6,
+        "final_xfrmr_spacing": null,
+        "final_coupler_spacing": null,
+        "score": 13767.320966726864,
+        "max_swr": 1.484053,
+        "avg_swr": 1.35399,
+        "gain_dbi": 12.43,
+        "fb_db": 3.7799999999999994,
+        "elements": [
+          {
+            "name": "REF",
+            "position_in": 0.0,
+            "length_in": 182.508549
+          },
+          {
+            "name": "DE",
+            "position_in": 70.6,
+            "length_in": 210.0
+          },
+          {
+            "name": "DIR1",
+            "position_in": 136.6,
+            "length_in": 195.008549
+          },
+          {
+            "name": "DIR2",
+            "position_in": 214.79999999999998,
+            "length_in": 191.008549
+          },
+          {
+            "name": "DIR3",
+            "position_in": 286.9,
+            "length_in": 188.508549
+          },
+          {
+            "name": "DIR4",
+            "position_in": 359.0,
+            "length_in": 184.508549
+          }
+        ],
+        "saved_at": "2026-05-23T21:06:42+00:00"
+      }
+    ],
+    "dead_paths": [
+      {
+        "from_cell_de_pos": 69.9,
+        "score": 13764.277880704542,
+        "delta_to_best": -3.0430860223223135,
+        "reason": "worse_than_kb_best",
+        "logged_at": "2026-05-23T21:20:07+00:00"
+      },
+      {
+        "from_cell_de_pos": 68.1,
+        "score": 13748.188256253985,
+        "delta_to_best": -19.132710472878898,
+        "reason": "worse_than_kb_best",
+        "logged_at": "2026-05-23T21:33:33+00:00"
+      },
+      {
+        "from_cell_de_pos": 66.8,
+        "score": 13737.882213193454,
+        "delta_to_best": -29.43875353340991,
+        "reason": "worse_than_kb_best",
+        "logged_at": "2026-05-23T21:46:58+00:00"
+      },
+      {
+        "from_cell_de_pos": 66.6,
+        "score": 13737.389607462572,
+        "delta_to_best": -29.93135926429204,
+        "reason": "worse_than_kb_best",
+        "logged_at": "2026-05-23T22:00:23+00:00"
+      }
+    ],
+    "schema_version": 1
+  }
+}

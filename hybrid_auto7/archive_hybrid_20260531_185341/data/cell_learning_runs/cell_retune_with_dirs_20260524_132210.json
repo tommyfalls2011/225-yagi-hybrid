@@ -1,0 +1,53 @@
+{
+  "elements": [
+    {
+      "name": "REF",
+      "position_in": 0.0,
+      "length_in": 226.5
+    },
+    {
+      "name": "XFRMR",
+      "position_in": 11.5,
+      "length_in": 204.0
+    },
+    {
+      "name": "DE",
+      "position_in": 42.5,
+      "length_in": 211.0
+    },
+    {
+      "name": "COUPLER",
+      "position_in": 74.5,
+      "length_in": 180.25
+    },
+    {
+      "name": "DIR1",
+      "position_in": 110.0,
+      "length_in": 168.0
+    },
+    {
+      "name": "DIR2",
+      "position_in": 212.0,
+      "length_in": 164.0
+    },
+    {
+      "name": "DIR3",
+      "position_in": 314.0,
+      "length_in": 159.0
+    }
+  ],
+  "score": 17441.234852070826,
+  "center_r": 67.82465260815813,
+  "center_x": -0.004379463434996594,
+  "center_swr": 1.3564930645511895,
+  "max_swr": 1.405227,
+  "avg_swr": 1.345167,
+  "u1p5": 45,
+  "u2p0": 45,
+  "peak_gain_dbi": 12.08,
+  "peak_elev_deg": 15.0,
+  "fb_db": 12.43,
+  "boom_ft": 26.3,
+  "height_ft": 30.0,
+  "saved_at": "20260524_132210"
+}

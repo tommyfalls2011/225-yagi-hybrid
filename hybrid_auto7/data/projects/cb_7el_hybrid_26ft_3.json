@@ -1,0 +1,55 @@
+{
+  "boom_diameter_in": 1.5,
+  "boom_length_ft": 26.3,
+  "cell_mounting_style": "de_only_insulated",
+  "center_half_len_in": 36.0,
+  "center_od_in": 0.625,
+  "champion_run_id": null,
+  "design_priority": "high_gain",
+  "element_count": 5,
+  "element_overrides": {
+    "COUPLER": {
+      "length_in": 175.5,
+      "position_in": 49.5
+    },
+    "DE": {
+      "length_in": 206.0,
+      "position_in": 38.5
+    },
+    "DIR1": {
+      "length_in": 180.5,
+      "position_in": 55.5
+    },
+    "DIR2": {
+      "length_in": 193.0,
+      "position_in": 175.3
+    },
+    "DIR3": {
+      "length_in": 168.5,
+      "position_in": 260.6
+    },
+    "REF": {
+      "length_in": 219.5
+    },
+    "XFRMR": {
+      "length_in": 194.0,
+      "position_in": 34.5
+    }
+  },
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "ground_epsr": 13.0,
+  "ground_mode": "good",
+  "ground_sigma_s_per_m": 0.005,
+  "height_ft": 26.0,
+  "min_front_back_db": 18.0,
+  "mode": "hybrid",
+  "name": "cb_7el_hybrid_26ft_3",
+  "notes": "5-element hybrid count; physical 7-element champion seed",
+  "outer_od_in": 0.5,
+  "prefer_gain": true,
+  "target_max_swr": 1.15,
+  "target_z_ohm": 50.0,
+  "tuning_procedure": "cell_then_directors_repeat",
+  "tx_power_watts": 8000.0
+}

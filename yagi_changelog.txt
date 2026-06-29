@@ -1,0 +1,34 @@
+# ===== YAGI OPTIMIZER — CHANGE HISTORY =====
+# Generated: Sun May  3 04:22:12 PM EDT 2026
+
+## Backup chain timeline:
+May 3 14:51 opt_7el_yagi2.py (32K bytes)
+
+
+# ================================================================
+# DIFF: opt_7el_yagi2.py.bak  →  opt_7el_yagi2.py.bak2
+# ================================================================
+
+# ================================================================
+# DIFF: opt_7el_yagi2.py.bak2  →  opt_7el_yagi2.py.bak3
+# ================================================================
+
+# ================================================================
+# DIFF: opt_7el_yagi2.py.bak3  →  opt_7el_yagi2.py.bak4
+# ================================================================
+
+# ================================================================
+# DIFF: opt_7el_yagi2.py.bak4  →  opt_7el_yagi2.py
+# ================================================================
+
+## yagiopt/ package files (created during modularization):
+May 3 14:51 yagiopt/search.py
+May 3 13:51 yagiopt/nec_export.py
+May 3 12:44 yagiopt/reporting.py
+May 3 12:44 yagiopt/pattern.py
+May 3 11:59 yagiopt/sweep.py
+May 3 11:16 yagiopt/nec_engine.py
+May 3 11:14 yagiopt/geometry.py
+May 3 11:14 yagiopt/rfmath.py
+May 3 11:13 yagiopt/constants.py
+May 3 11:13 yagiopt/__init__.py

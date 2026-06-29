@@ -1,0 +1,24 @@
+
+Pattern test
+============
+Run id:              3096
+Stage:               dir3_quick
+Frequency:           27.185 MHz
+
+Design
+------
+DE position:         48.000 in
+XFRMR-DE spacing:    8.500 in
+DE-Coupler spacing:  36.000 in
+XFRMR length:        199.000 in
+Coupler length:      173.000 in
+DE length:           210.000 in
+
+Pattern
+-------
+Forward gain +Y:     9.835 dBi
+Rear gain -Y:        -19.243 dBi
+Front/back:          29.078 dB
+Max gain:            9.835 dBi
+Max gain phi:        90.0 deg
+Beamwidth approx:    58.0 deg

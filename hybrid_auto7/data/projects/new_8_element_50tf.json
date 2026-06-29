@@ -1,0 +1,40 @@
+{
+  "boom_diameter_in": 1.5,
+  "boom_length_ft": 45.0,
+  "cell_mounting_style": "full_cell_insulated",
+  "center_half_len_in": 36.0,
+  "center_od_in": 0.625,
+  "champion_run_id": null,
+  "design_priority": "wideband",
+  "element_count": 8,
+  "element_overrides": {
+    "COUPLER": {
+      "length_in": 172.99999999999997,
+      "position_in": 72.0
+    },
+    "DE": {
+      "length_in": 209.99999999999997,
+      "position_in": 47.99999999999999
+    },
+    "XFRMR": {
+      "length_in": 198.99999999999997,
+      "position_in": 27.999999999999993
+    }
+  },
+  "freq_start_mhz": 26.965,
+  "freq_stop_mhz": 27.405,
+  "ground_epsr": 13.0,
+  "ground_mode": "average",
+  "ground_sigma_s_per_m": 0.005,
+  "height_ft": 40.0,
+  "min_front_back_db": 18.0,
+  "mode": "hybrid",
+  "name": "new_8_element_50tf",
+  "notes": "8-element hybrid count; physical 10-element champion seed",
+  "outer_od_in": 0.5,
+  "prefer_gain": true,
+  "target_max_swr": 1.15,
+  "target_z_ohm": 50.0,
+  "tuning_procedure": "wide_cell_owa",
+  "tx_power_watts": 30000.0
+}
