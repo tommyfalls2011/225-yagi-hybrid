@@ -1,0 +1,166 @@
+--- a/hybrid_auto7/hyagi/match_opt.py	2026-06-29 18:40:58.251395934 +0000
++++ b/hybrid_auto7/hyagi/match_opt.py	2026-06-29 18:37:34.474395096 +0000
+@@ -939,45 +939,79 @@
+     # element sits at position 0 (matches the conventional REF=0 layout the
+     # rest of the app expects).
+     if not lock_endpoints and tune_spacings and elements:
+-        elements = copy.deepcopy(elements)
+-        de = _el(elements, "DE")
+-        if de is not None:
+-            de_pos = float(de["position_in"])
+-            # Re-seed REF gap to midpoint of REF_DE spacing rules.
+-            ref = _el(elements, "REF")
+-            if ref is not None:
+-                lo_g, hi_g = _spacing_bounds(rules, "REF_DE", (40.0, 80.0))
+-                ref["position_in"] = round(de_pos - 0.5 * (lo_g + hi_g), 4)
+-            # Re-seed director gaps cumulatively from COUPLER (or DE) using
+-            # the midpoint of each pair's spacing rule.  XFRMR / COUPLER
+-            # positions are NOT touched here -- the tight cell stays tight.
+-            dirs = sorted(
++        # Compression sniff-test: any director gap within 5" of its rules
++        # minimum?  Iterate the existing director chain in boom order.
++        def _is_compressed():
++            dirs_sorted = sorted(
+                 [e for e in elements if str(e["name"]).upper().startswith("DIR")],
+                 key=lambda e: float(e["position_in"]),
+             )
+-            anchor = _el(elements, "COUPLER") or de
++            if not dirs_sorted:
++                return False
++            anchor = _el(elements, "COUPLER") or _el(elements, "DE")
++            if anchor is None:
++                return False
+             prev_pos = float(anchor["position_in"])
+             prev_name = str(anchor["name"]).upper()
+-            for d in dirs:
+-                lo_g, hi_g = _spacing_bounds(
++            for d in dirs_sorted:
++                gap = float(d["position_in"]) - prev_pos
++                lo_g, _hi_g = _spacing_bounds(
+                     rules, f"{prev_name}_{d['name'].upper()}", (48.0, 96.0))
+-                gap = 0.5 * (lo_g + hi_g)
+-                prev_pos = round(prev_pos + gap, 4)
+-                d["position_in"] = prev_pos
++                if gap < lo_g + 5.0:
++                    return True
++                prev_pos = float(d["position_in"])
+                 prev_name = str(d["name"]).upper()
+-            # Shift so the leftmost element lands at position 0 (convention:
+-            # REF anchors the boom).  Preserves every gap exactly.
+-            min_pos = min(float(e["position_in"]) for e in elements)
+-            if abs(min_pos) > 1e-6:
+-                for e in elements:
+-                    e["position_in"] = round(float(e["position_in"]) - min_pos, 4)
++            return False
++
++        if not _is_compressed():
+             if log_fn:
+-                new_span = max(float(e["position_in"]) for e in elements) - \
+-                           min(float(e["position_in"]) for e in elements)
+-                log_fn(f"  [boom-free] reseeded director spacings to rules "
+-                       f"midpoints (XFRMR/COUPLER cell untouched) -> starting "
+-                       f"span {new_span:.2f}\".  Optimizer free to grow or "
+-                       f"shrink from here.")
++                cur_span = (max(float(e["position_in"]) for e in elements)
++                            - min(float(e["position_in"]) for e in elements))
++                log_fn(f"  [boom-free] director spacings are already in a "
++                       f"healthy range (boom span {cur_span:.2f}\") -- NOT "
++                       f"reseeding (would undo your hand-tune).  Optimizer "
++                       f"still free to grow or shrink from here.")
++        else:
++            elements = copy.deepcopy(elements)
++            de = _el(elements, "DE")
++            if de is not None:
++                de_pos = float(de["position_in"])
++                # Re-seed REF gap to midpoint of REF_DE spacing rules.
++                ref = _el(elements, "REF")
++                if ref is not None:
++                    lo_g, hi_g = _spacing_bounds(rules, "REF_DE", (40.0, 80.0))
++                    ref["position_in"] = round(de_pos - 0.5 * (lo_g + hi_g), 4)
++                # Re-seed director gaps cumulatively from COUPLER (or DE) using
++                # the midpoint of each pair's spacing rule.  XFRMR / COUPLER
++                # positions are NOT touched here -- the tight cell stays tight.
++                dirs = sorted(
++                    [e for e in elements if str(e["name"]).upper().startswith("DIR")],
++                    key=lambda e: float(e["position_in"]),
++                )
++                anchor = _el(elements, "COUPLER") or de
++                prev_pos = float(anchor["position_in"])
++                prev_name = str(anchor["name"]).upper()
++                for d in dirs:
++                    lo_g, hi_g = _spacing_bounds(
++                        rules, f"{prev_name}_{d['name'].upper()}", (48.0, 96.0))
++                    gap = 0.5 * (lo_g + hi_g)
++                    prev_pos = round(prev_pos + gap, 4)
++                    d["position_in"] = prev_pos
++                    prev_name = str(d["name"]).upper()
++                # Shift so the leftmost element lands at position 0
++                # (convention: REF anchors the boom).  Preserves every gap.
++                min_pos = min(float(e["position_in"]) for e in elements)
++                if abs(min_pos) > 1e-6:
++                    for e in elements:
++                        e["position_in"] = round(float(e["position_in"]) - min_pos, 4)
++                if log_fn:
++                    new_span = max(float(e["position_in"]) for e in elements) - \
++                               min(float(e["position_in"]) for e in elements)
++                    log_fn(f"  [boom-free] compressed start detected -- "
++                           f"reseeded director spacings to rules midpoints "
++                           f"(XFRMR/COUPLER cell untouched) -> starting span "
++                           f"{new_span:.2f}\".  Optimizer free to grow or "
++                           f"shrink from here.")
+ 
+     if goal == "hybrid":
+         # Stagger-tune the driven cell when the band is wide -- positions the
+--- a/hybrid_auto7/hyagi/auto_learn.py	2026-06-29 18:40:58.252395934 +0000
++++ b/hybrid_auto7/hyagi/auto_learn.py	2026-06-29 18:37:56.248395188 +0000
+@@ -559,8 +559,49 @@
+             log_fn(f"\n[matcher] done  band_max_swr={band_max:.3f}  "
+                    f"gain={metrics.get('gain_dbi',0):.2f}  fb={metrics.get('fb_db',0):.2f}  "
+                    f"score={score:+.1f}")
+-            if band_max < best_metrics.get("band_max_swr", 99.0) - 1e-6 or band_max <= cfg.target_max_swr:
++            baseline_band = best_metrics.get("band_max_swr", 99.0)
++            if band_max < baseline_band - 1e-6 or band_max <= cfg.target_max_swr:
+                 best_geo, best_metrics, best_score = copy.deepcopy(new_geo), metrics, score
++                # Compute and show the boom-length delta so the user can
++                # SEE the optimizer moved the boom (or kept it).  This is
++                # the answer to "is FREE mode actually working?"
++                try:
++                    base_span = (max(float(e["position_in"]) for e in elements)
++                                 - min(float(e["position_in"]) for e in elements))
++                    new_span = (max(float(e["position_in"]) for e in new_geo)
++                                - min(float(e["position_in"]) for e in new_geo))
++                    log_fn(f"[adopt] band-max {band_max:.3f} <= baseline "
++                           f"{baseline_band:.3f} -- ADOPTING optimizer geometry."
++                           f"  boom span {base_span:.2f}\" -> {new_span:.2f}\" "
++                           f"(delta {new_span - base_span:+.2f}\").")
++                except Exception:
++                    pass
++            else:
++                # The optimizer's best attempt was worse than your starting
++                # geometry.  We DO NOT silently swap it in -- that would
++                # leave you with a worse antenna.  Tell the user why their
++                # boom didn't change and how to give the matcher more room
++                # to explore.
++                try:
++                    base_span = (max(float(e["position_in"]) for e in elements)
++                                 - min(float(e["position_in"]) for e in elements))
++                    new_span = (max(float(e["position_in"]) for e in new_geo)
++                                - min(float(e["position_in"]) for e in new_geo))
++                    log_fn(f"[keep-baseline] optimizer best band-max "
++                           f"{band_max:.3f} > YOUR INPUT'S baseline "
++                           f"{baseline_band:.3f} -- your starting geometry "
++                           f"(boom {base_span:.2f}\") was already better, "
++                           f"keeping it.  Optimizer DID explore -- it tried "
++                           f"a boom of {new_span:.2f}\" (delta "
++                           f"{new_span - base_span:+.2f}\") at SWR "
++                           f"{band_max:.3f}, but reverted because your "
++                           f"input scored better.  To force more "
++                           f"exploration: raise restart count, raise "
++                           f"target SWR, or reseed the cell.")
++                except Exception:
++                    log_fn(f"[keep-baseline] optimizer best band-max "
++                           f"{band_max:.3f} > baseline {baseline_band:.3f} "
++                           f"-- keeping your input geometry.")
+             if band_max <= cfg.target_max_swr:
+                 log_fn(f"[done] reached SWR <= {cfg.target_max_swr} across the band.")
+             else:
