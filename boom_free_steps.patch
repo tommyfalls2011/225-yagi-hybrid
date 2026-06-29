@@ -1,0 +1,113 @@
+--- a/hybrid_auto7/hyagi/match_opt.py	2026-06-29 13:37:24.137223157 +0000
++++ b/hybrid_auto7/hyagi/match_opt.py	2026-06-29 13:33:25.500221728 +0000
+@@ -426,7 +426,7 @@
+ 
+ def _descend(vec, bounds, elements, de_pos, rules, height_ft, f_low, f_high,
+              points, steps, target, log_fn, move_log=None, on_move=None,
+-             fc=None, goal="wideband"):
++             fc=None, goal="wideband", free_boom=False):
+     best_obj, best_mx = _objective(_apply(elements, vec, de_pos, rules), rules,
+                                    height_ft, f_low, f_high, points, fc, goal)
+     keys = list(vec.keys())
+@@ -436,7 +436,16 @@
+             improved, rounds = False, rounds + 1
+             for k in keys:
+                 lo, hi = bounds[k]
+-                for d in (step, -step):
++                # FREE-boom widens director-spacing DOFs 4x so coordinate
++                # descent can actually walk the boom across its full rules
++                # window (e.g. sp_DIR2 has 40-96" of room; with step=8 the
++                # native probe is +-8 -- too small.  With 4x it's +-32, enough
++                # to actually explore).  XFRMR/COUPLER cell gaps and lengths
++                # use the normal step so the tight cell stays tight.
++                dof_step = step
++                if free_boom and (k.startswith("sp_") or k == "ref_gap"):
++                    dof_step = step * 4.0
++                for d in (dof_step, -dof_step):
+                     nv = dict(vec)
+                     nv[k] = round(min(hi, max(lo, vec[k] + d)), 3)
+                     if abs(nv[k] - vec[k]) < 1e-9:
+@@ -604,7 +613,7 @@
+ 
+ def _optimize_beam(elements, rules, height_ft, tune_spacings, log_fn,
+                    fb_weight=0.3, f_low=None, f_high=None, points=None,
+-                   target_swr=None):
++                   target_swr=None, free_boom=False):
+     """Tune the BEAM (REF + directors) for max gain + F/B, leaving the cell
+     to the match phase.  This is the hybrid's whole point: REF+directors
+     shape the beam, the driven cell handles the wideband match, so
+@@ -683,10 +692,17 @@
+                 pos_names = (["REF"] if _el(cur, "REF") else [])
+                 if tune_spacings:
+                     pos_names += dirs
++                # FREE-boom widens position probes 4x so the beam phase can
++                # actually walk director positions across their rules window
++                # (sp_DIR ranges 40-120").  Without this, the +-2/+-1/+-0.5
++                # probes were 100% rejected because they couldn't escape
++                # the local SWR basin -- see user's tune log showing
++                # 14 + 38 + 52 rejections per beam step.
++                pos_step = step * 4.0 if free_boom else step
+                 for name in pos_names:
+                     base = float(_el(cur, name)["position_in"])
+                     lo, hi = _pos_bounds(cur, name, rules)
+-                    for d in (step, -step):
++                    for d in (pos_step, -pos_step):
+                         npos = round(min(hi, max(lo, base + d)), 3)
+                         if abs(npos - base) < 1e-9:
+                             continue
+@@ -744,7 +760,7 @@
+ 
+ def _optimize_hybrid(elements, rules, height_ft, target_swr, points, f_low,
+                      f_high, fc, tune_spacings, steps, log_fn, move_log, on_move,
+-                     iters=3):
++                     iters=3, free_boom=False):
+     """Hybrid optimiser, made robust:
+ 
+     1. baseline = match the DRIVEN CELL only (directors frozen) -> keeps the
+@@ -786,7 +802,7 @@
+     for it in range(iters):
+         trial = _optimize_beam(cur, rules, height_ft, tune_spacings, log_fn,
+                                f_low=f_low, f_high=f_high, points=points,
+-                               target_swr=target_swr)
++                               target_swr=target_swr, free_boom=free_boom)
+         trial, mx = _match_cell(trial, rules, height_ft, f_low, f_high, points,
+                                 target_swr, fc, steps, log_fn, move_log, on_move)
+         score, mx = _hybrid_overall(trial, rules, height_ft, f_low, f_high,
+@@ -975,7 +991,8 @@
+         else:
+             return _optimize_hybrid(elements, rules, height_ft, target_swr, points,
+                                     f_low, f_high, fc, tune_spacings, steps, log_fn,
+-                                    move_log, on_move, iters=max(2, int(restarts) + 1))
++                                    move_log, on_move, iters=max(2, int(restarts) + 1),
++                                    free_boom=not lock_endpoints)
+ 
+     if goal == "wideband":
+         elements = _apply_stagger_seed(copy.deepcopy(elements), rules,
+@@ -996,7 +1013,7 @@
+     best_vec, best_obj, best_mx = _descend(
+         dict(vec0), bounds, elements, de_pos, rules, height_ft,
+         f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move,
+-        fc=fc, goal=goal)
++        fc=fc, goal=goal, free_boom=not lock_endpoints)
+     if log_fn:
+         log_fn(f"  [match:{goal}] base pass -> band_max_swr={best_mx:.3f}")
+ 
+@@ -1046,7 +1063,8 @@
+             pv[k] = round(min(hi, max(lo, pv[k] + rng.uniform(-span, span))), 3)
+         v, o, mx = _descend(pv, bounds, elements, de_pos, rules, height_ft,
+                             f_low, f_high, points, steps, target_swr, log_fn,
+-                            move_log, on_move, fc=fc, goal=goal)
++                            move_log, on_move, fc=fc, goal=goal,
++                            free_boom=not lock_endpoints)
+         if log_fn:
+             log_fn(f"  [match:{goal}] restart {r} -> band_max_swr={mx:.3f}")
+         if o < best_obj - 1e-4:
+@@ -1106,7 +1124,7 @@
+             best_vec, best_obj, best_mx = _descend(
+                 dict(best_vec), bounds, best_elements, de_pos, rules, height_ft,
+                 f_low, f_high, points, steps, target_swr, log_fn, move_log, on_move,
+-                fc=fc, goal=goal)
++                fc=fc, goal=goal, free_boom=not lock_endpoints)
+             best_elements = _apply(best_elements, best_vec, de_pos, rules)
+             if polish_gain:
+                 ceiling = max(float(target_swr), float(best_mx))
