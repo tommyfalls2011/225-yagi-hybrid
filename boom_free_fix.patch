@@ -1,42 +1,6 @@
-From: Emergent E1 <noreply@emergent.sh>
-Date: 2026-02
-Subject: [PATCH] FREE boom mode: reseed director spacings to rules midpoints
-
-Bug: switching boom mode FIXED -> FREE left the optimizer stuck at the
-previously locked length.  No hard constraint was actually applied in FREE
-mode (boom_max_in=0 correctly bypasses the endpoint pin), but coordinate
-descent step sizes (0.5"-8") cannot walk director gaps the 30-100" needed
-to reach a healthier spread from a compressed starting geometry.
-
-Diagnostic (tests/test_free_boom_expands.py) confirmed sp_DIR* DOFs were
-probed only +-4-8" out of an 80-120" rules window before the descent gave
-up, every probe making SWR slightly worse on the already-decent
-compressed start.
-
-Fix: in optimize(), when boom_max_in <= 0 AND tune_spacings=True, reseed
-each director gap (and the REF gap) to the MIDPOINT of its rules spacing
-window BEFORE descent runs.  Critically, the XFRMR_DE and DE_COUPLER
-tight-cell spacings (4-32" rules) are NOT touched -- the hybrid/OWA
-wideband performance comes from the tightly coupled XFRMR/DE/COUPLER
-resonator triple at the user-tuned operating sweet spot (~5-7").  Only
-the REF gap and the director chain are repositioned.  After repositioning
-the array is shifted so the leftmost element stays at position 0.
-
-No-op for FIXED mode (cap_in > 0) and no-op when spacings are frozen.
-
-Tests:
-  - tests/test_free_boom_expands.py (2 new, both passing):
-    * FREE + compressed 183" start  -> span grows past 233"
-    * FIXED + same compressed start -> span pinned to 240" cap (no reseed)
-  - All 17 existing test_boom_cap.py + test_hybrid_seed.py tests still pass
-
----
- hybrid_auto7/hyagi/match_opt.py | 62 +++++++++++++++++++++++++++++++++
- 1 file changed, 62 insertions(+)
-
---- a/hybrid_auto7/hyagi/match_opt.py
-+++ b/hybrid_auto7/hyagi/match_opt.py
-@@ -891,6 +891,68 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
+--- a/hybrid_auto7/hyagi/match_opt.py	2026-06-29 12:30:14.597378383 +0000
++++ b/hybrid_auto7/hyagi/match_opt.py	2026-06-29 12:30:04.541378287 +0000
+@@ -891,6 +891,69 @@
                         f"-> rescaled to exactly {cap_in:.2f}\" "
                         f"(REF at 0, last DIR at {cap_in:.2f}\").")
  

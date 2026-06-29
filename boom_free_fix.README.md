@@ -1,12 +1,28 @@
 ## boom_free_fix.patch — FREE boom mode no longer stuck at the previously-locked length
 
-Apply on top of `wideband_matcher.patch` (or on top of an already-patched repo):
+Apply on top of an already-bootstrapped repo (after `wideband_matcher.patch`):
 
 ```bash
+cd ~/scripts            # or wherever your repo root is
 git apply boom_free_fix.patch
-# regression test (requires the nec2c binary on $PATH)
-python -m pytest tests/test_free_boom_expands.py -v
+# verify the new block landed
+grep -n "boom-free" hybrid_auto7/hyagi/match_opt.py
+# (expected: two hits -- the comment block and the log_fn line)
+# restart Streamlit so it reloads the patched module
 ```
+
+Then re-run a FREE-mode tune.  In the live status log you should see a new
+line appear **between** `[resonance-pre-pass]` and `[stagger-seed]`:
+
+```
+[boom-free] reseeded director spacings to rules midpoints (XFRMR/COUPLER cell untouched) -> starting span XXX.XX". Optimizer free to grow or shrink from here.
+```
+
+### Regression test
+```bash
+python -m pytest hybrid_auto7/tests/test_free_boom_expands.py -v
+```
+(requires the `nec2c` binary on `$PATH`; ~2 minutes total)
 
 ### What it fixes
 Switching boom mode FIXED → FREE used to leave the optimizer stuck at the
