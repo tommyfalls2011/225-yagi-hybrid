@@ -1,0 +1,108 @@
+From: Emergent E1 <noreply@emergent.sh>
+Date: 2026-02
+Subject: [PATCH] FREE boom mode: reseed director spacings to rules midpoints
+
+Bug: switching boom mode FIXED -> FREE left the optimizer stuck at the
+previously locked length.  No hard constraint was actually applied in FREE
+mode (boom_max_in=0 correctly bypasses the endpoint pin), but coordinate
+descent step sizes (0.5"-8") cannot walk director gaps the 30-100" needed
+to reach a healthier spread from a compressed starting geometry.
+
+Diagnostic (tests/test_free_boom_expands.py) confirmed sp_DIR* DOFs were
+probed only +-4-8" out of an 80-120" rules window before the descent gave
+up, every probe making SWR slightly worse on the already-decent
+compressed start.
+
+Fix: in optimize(), when boom_max_in <= 0 AND tune_spacings=True, reseed
+each director gap (and the REF gap) to the MIDPOINT of its rules spacing
+window BEFORE descent runs.  Critically, the XFRMR_DE and DE_COUPLER
+tight-cell spacings (4-32" rules) are NOT touched -- the hybrid/OWA
+wideband performance comes from the tightly coupled XFRMR/DE/COUPLER
+resonator triple at the user-tuned operating sweet spot (~5-7").  Only
+the REF gap and the director chain are repositioned.  After repositioning
+the array is shifted so the leftmost element stays at position 0.
+
+No-op for FIXED mode (cap_in > 0) and no-op when spacings are frozen.
+
+Tests:
+  - tests/test_free_boom_expands.py (2 new, both passing):
+    * FREE + compressed 183" start  -> span grows past 233"
+    * FIXED + same compressed start -> span pinned to 240" cap (no reseed)
+  - All 17 existing test_boom_cap.py + test_hybrid_seed.py tests still pass
+
+---
+ hybrid_auto7/hyagi/match_opt.py | 62 +++++++++++++++++++++++++++++++++
+ 1 file changed, 62 insertions(+)
+
+--- a/hybrid_auto7/hyagi/match_opt.py
++++ b/hybrid_auto7/hyagi/match_opt.py
+@@ -891,6 +891,68 @@ def optimize(elements, rules, height_ft=30.0, target_swr=1.2,
+                        f"-> rescaled to exactly {cap_in:.2f}\" "
+                        f"(REF at 0, last DIR at {cap_in:.2f}\").")
+ 
++    # ---- FREE MODE: reseed director spacings to rules midpoints -------------
++    # When the user has FREE'd the boom AND asked the tuner to move spacings
++    # (tune_spacings=True), the starting geometry on disk is often the
++    # compressed leftover from a previous FIXED tune.  Coordinate descent
++    # uses small step sizes (~0.5"-8") so it can never walk director gaps
++    # the 30-100" needed to reach a healthier spread on its own -- the
++    # boom stays artificially short.  Diagnose: a deliberately compressed
++    # 7-element start showed sp_DIR* moves probed only +-4-8" out of an
++    # 80-120" rules window before the descent gave up (every probe made
++    # SWR slightly worse on the already-decent starting geometry).
++    #
++    # IMPORTANT -- HYBRID/OWA CELL STAYS TIGHT.  This reseed touches ONLY
++    # the REF gap and the director-to-director gaps.  The XFRMR_DE and
++    # DE_COUPLER spacings (4-32" tight-cell rules) are intentionally NOT
++    # rewritten -- the hybrid wideband performance comes from the tightly
++    # coupled XFRMR / DE / COUPLER resonator triple, which the user has
++    # already tuned to its operating sweet-spot (~5-7").  Director spacings
++    # are the only DOFs being repositioned here.
++    #
++    # After repositioning, the whole array is shifted so the leftmost
++    # element sits at position 0 (matches the conventional REF=0 layout the
++    # rest of the app expects).
++    if not lock_endpoints and tune_spacings and elements:
++        elements = copy.deepcopy(elements)
++        de = _el(elements, "DE")
++        if de is not None:
++            de_pos = float(de["position_in"])
++            # Re-seed REF gap to midpoint of REF_DE spacing rules.
++            ref = _el(elements, "REF")
++            if ref is not None:
++                lo_g, hi_g = _spacing_bounds(rules, "REF_DE", (40.0, 80.0))
++                ref["position_in"] = round(de_pos - 0.5 * (lo_g + hi_g), 4)
++            # Re-seed director gaps cumulatively from COUPLER (or DE) using
++            # the midpoint of each pair's spacing rule.  XFRMR / COUPLER
++            # positions are NOT touched here -- the tight cell stays tight.
++            dirs = sorted(
++                [e for e in elements if str(e["name"]).upper().startswith("DIR")],
++                key=lambda e: float(e["position_in"]),
++            )
++            anchor = _el(elements, "COUPLER") or de
++            prev_pos = float(anchor["position_in"])
++            prev_name = str(anchor["name"]).upper()
++            for d in dirs:
++                lo_g, hi_g = _spacing_bounds(
++                    rules, f"{prev_name}_{d['name'].upper()}", (48.0, 96.0))
++                gap = 0.5 * (lo_g + hi_g)
++                prev_pos = round(prev_pos + gap, 4)
++                d["position_in"] = prev_pos
++                prev_name = str(d["name"]).upper()
++            # Shift so the leftmost element lands at position 0 (convention:
++            # REF anchors the boom).  Preserves every gap exactly.
++            min_pos = min(float(e["position_in"]) for e in elements)
++            if abs(min_pos) > 1e-6:
++                for e in elements:
++                    e["position_in"] = round(float(e["position_in"]) - min_pos, 4)
++            if log_fn:
++                new_span = max(float(e["position_in"]) for e in elements) - \
++                           min(float(e["position_in"]) for e in elements)
++                log_fn(f"  [boom-free] reseeded director spacings to rules "
++                       f"midpoints (XFRMR/COUPLER cell untouched) -> starting "
++                       f"span {new_span:.2f}\".  Optimizer free to grow or "
++                       f"shrink from here.")
++
+     if goal == "hybrid":
+         # Stagger-tune the driven cell when the band is wide -- positions the
+         # three coupled resonators in the right basin for multi-MHz coverage
