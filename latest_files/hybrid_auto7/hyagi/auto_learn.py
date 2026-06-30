@@ -1,0 +1,776 @@
+"""hybrid_auto7 — closed-loop self-learning tuner.
+
+This is the missing piece that turns the hybrid optimizer into a real
+SELF-LEARNING system. Each "generation":
+
+  1. Runs a tuning procedure (existing v2_runner mini-tunes) against the
+     current geometry.
+  2. Auto-adopts the result if it improved (closing the loop — no manual
+     "Adopt geometry" click needed).
+  3. Does a fine frequency sweep across the band and records EVERYTHING to the
+     SQL database (auto7_history.db): the run summary, every element, and the
+     full SWR/impedance curve.
+  4. LEARNS from the per-candidate move logs — which element/length/position
+     values actually lowered SWR / raised the score — and narrows the search
+     around those proven values for the next generation, so each run starts
+     smarter and converges.
+
+Stops when SWR <= target (default 1.2) across the whole band, or when no
+generation improves for `patience` rounds, or after `max_generations`.
+
+Every antenna is different (height, boom, element diameters, band), so warm
+starts are matched to a design signature, never blindly reused.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import math
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+from . import v2_runner, v2_scorer, match_opt
+from .db import connect, now_utc
+from .paths import DATA_DIR, ensure_dirs
+
+INCH = 0.0254
+FT = 0.3048
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+@dataclass
+class LearnConfig:
+    project_name: str = "current_geometry"
+    height_ft: float = 30.0
+    swr_profile: str = "wideband_1.2"   # hard wideband target ~1.2:1
+    target_max_swr: float = 1.2       # stop when band max SWR <= this
+    band_sweep_points: int = 21       # fine sweep for stop-check + DB curve
+    max_generations: int = 12
+    patience: int = 3                 # stop after N gens with no improvement
+    narrow_window_in: float = 3.0     # learning: +/- window around best value
+    narrow_step_in: float = 0.25      # learning: finer step when narrowing
+    db_path: str | None = None        # None -> default auto7_history.db
+    use_matcher: bool = True          # True -> coordinate-descent wideband matcher
+    polish_gain: bool = True          # recover gain/F-B after hitting SWR target
+    tune_goal: str = "wideband"       # "wideband" (min worst SWR) or "resonant"
+                                      # (R->50, X->0 at centre for high power)
+    tune_spacings: bool = False       # "boom free": let the matcher move spacings
+    grounded: bool = False            # legacy bool kept for back-compat
+    grounding: str = "all_insulated"  # tristate: all_insulated / cell_insulated / all_grounded
+    boom_diameter_in: float = 1.5     # boom OD (inches), used when bonding fires
+
+
+# ---------------------------------------------------------------------------
+# Band sweep (fine) for stop-check + full SWR curve in the DB
+# ---------------------------------------------------------------------------
+def sweep_band(elements, f_low, f_high, points, height_ft):
+    """Run one nec2c sweep across the band. Returns list of
+    (freq, r, x, swr) and the max SWR across the band."""
+    points = max(2, int(points))
+    freqs = [f_low + i * (f_high - f_low) / (points - 1) for i in range(points)]
+    nec = v2_runner.build_nec_card(elements, freqs, height_ft=height_ft)
+
+    import os
+    import pathlib
+    import subprocess
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".nec", delete=False) as fh:
+        fh.write(nec)
+        nec_path = fh.name
+    out_path = nec_path.replace(".nec", ".out")
+    try:
+        subprocess.run(["nec2c", "-i", nec_path, "-o", out_path],
+                       capture_output=True, text=True, timeout=120)
+        if not pathlib.Path(out_path).exists():
+            return [], 99.0
+        text = pathlib.Path(out_path).read_text()
+    finally:
+        for p in (nec_path, out_path):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+
+    impedances, _pattern = v2_runner.parse_nec_output(text)
+    curve = []
+    for i, (r, x) in enumerate(impedances):
+        f = freqs[i] if i < len(freqs) else freqs[-1]
+        curve.append((round(f, 4), float(r), float(x), float(v2_runner.swr(r, x))))
+    max_swr = max((c[3] for c in curve), default=99.0)
+    return curve, max_swr
+
+
+# ---------------------------------------------------------------------------
+# Database persistence (writes into the user's existing auto7_history.db)
+# ---------------------------------------------------------------------------
+def _el(elements, name):
+    for e in elements:
+        if str(e.get("name", "")).upper() == name:
+            return e
+    return None
+
+
+def _pos(elements, name):
+    e = _el(elements, name)
+    return float(e["position_in"]) if e else 0.0
+
+
+def _len(elements, name):
+    e = _el(elements, name)
+    return float(e["length_in"]) if e else 0.0
+
+
+def save_generation(con, cfg, gen, stage, elements, metrics, curve, f_step, *,
+                    sig=None):
+    """Persist one generation to auto7_history.db (runs + elements + freq_results).
+
+    Embeds the design signature (taper|band|height|n_elements) into the
+    design_key so the next warm-start can filter on it -- the previous
+    'project_name|g<gen>|<ts>' format gave the warm-start nothing to match
+    on, leading to CB-band geometries being loaded into OWA-band tunes
+    and baseline SWR readings of 100+.  See warm_start_geometry()."""
+    cur = con.cursor()
+    sig_part = (sig or "nosig").replace("|", "_")
+    design_key = (f"{cfg.project_name}|{sig_part}|g{gen}|"
+                  f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}")
+
+    de_pos = _pos(elements, "DE")
+    xfrmr_pos = _pos(elements, "XFRMR")
+    coupler_pos = _pos(elements, "COUPLER")
+
+    swrs = [c[3] for c in curve] if curve else [metrics.get("max_swr", 99.0)]
+    rs = [c[1] for c in curve] if curve else [metrics.get("center_r", 0.0)]
+    xs = [abs(c[2]) for c in curve] if curve else [abs(metrics.get("center_x", 0.0))]
+    min_swr = min(swrs)
+    max_swr = max(swrs)
+    avg_swr = sum(swrs) / len(swrs)
+    under_1p5 = sum(1 for s in swrs if s <= 1.5)
+    under_2p0 = sum(1 for s in swrs if s <= 2.0)
+
+    f_low = cfg_band[0]
+    f_high = cfg_band[1]
+
+    cur.execute("""
+        INSERT INTO runs (
+            created_utc, design_key, stage, status,
+            de_position_in, xfrmr_spacing_in, coupler_spacing_in,
+            xfrmr_length_in, coupler_length_in, de_length_in,
+            f_start_mhz, f_stop_mhz, f_step_mhz,
+            min_swr, max_swr, avg_swr, points_under_1p5, points_under_2p0,
+            avg_r, avg_abs_x,
+            center_r, center_x, center_swr, center_rl_db, nec_file
+        ) VALUES (?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?,?,?, ?,?, ?,?,?,?,?)
+    """, (
+        now_utc(), design_key, stage, "DONE",
+        de_pos, abs(xfrmr_pos - de_pos), abs(coupler_pos - de_pos),
+        _len(elements, "XFRMR"), _len(elements, "COUPLER"), _len(elements, "DE"),
+        f_low, f_high, f_step,
+        round(min_swr, 6), round(max_swr, 6), round(avg_swr, 6),
+        under_1p5, under_2p0,
+        round(sum(rs) / len(rs), 6), round(sum(xs) / len(xs), 6),
+        round(float(metrics.get("center_r", 0.0)), 6),
+        round(float(metrics.get("center_x", 0.0)), 6),
+        round(float(metrics.get("center_swr", max_swr)), 6),
+        round(_rl_from_swr(metrics.get("center_swr", max_swr)), 6),
+        f"auto_learn:{stage}",
+    ))
+    run_id = cur.lastrowid
+
+    cur.executemany(
+        "INSERT INTO elements (run_id, name, position_in, length_in) VALUES (?,?,?,?)",
+        [(run_id, e["name"], float(e["position_in"]), float(e["length_in"])) for e in elements],
+    )
+    if curve:
+        cur.executemany(
+            "INSERT INTO freq_results (run_id, freq_mhz, r_ohm, x_ohm, swr_50) VALUES (?,?,?,?,?)",
+            [(run_id, f, r, x, s) for (f, r, x, s) in curve],
+        )
+    con.commit()
+    return run_id
+
+
+def _rl_from_swr(swr):
+    swr = float(swr)
+    if swr <= 1.0:
+        return 99.0
+    g = (swr - 1.0) / (swr + 1.0)
+    g = max(g, 1e-12)
+    return -20.0 * math.log10(g)
+
+
+# global filled per-run so save_generation can read the band
+cfg_band = (26.965, 27.405)
+
+
+# ---------------------------------------------------------------------------
+# Learning: aggregate per-candidate move logs -> best value per mini-tune
+# ---------------------------------------------------------------------------
+class MoveMemory:
+    """Remembers which sweep value gave the best score for each mini-tune, so
+    later generations narrow the search around proven values."""
+
+    def __init__(self):
+        self.best_value = {}      # mini_name -> value with best score seen
+        self._best_score = {}     # mini_name -> that best score
+        self.moves_logged = 0
+
+    def ingest_step_results(self, step_results):
+        for sr in step_results or []:
+            name = sr.get("step")
+            for cand in sr.get("candidates", []) or []:
+                v = cand.get("v")
+                s = cand.get("score")
+                if v is None or s is None:
+                    continue
+                self.moves_logged += 1
+                if name not in self._best_score or s > self._best_score[name]:
+                    self._best_score[name] = s
+                    self.best_value[name] = float(v)
+
+    def narrow(self, minis, window_in, step_in):
+        """Return a copy of mini-tunes with sweep ranges narrowed around the
+        best learned value (only for sweep_* types we have learned)."""
+        out = []
+        for m in minis:
+            mm = copy.deepcopy(m)
+            name = mm.get("name")
+            if name in self.best_value and mm.get("type", "").startswith("sweep_"):
+                center = self.best_value[name]
+                mm["start_in"] = round(center - window_in, 3)
+                mm["stop_in"] = round(center + window_in, 3)
+                mm["step_in"] = step_in
+                mm["_narrowed"] = True
+            out.append(mm)
+        return out
+
+    def write_jsonl(self, step_results, gen, stage):
+        """Append per-candidate moves to a learn_insights-compatible JSONL."""
+        ensure_dirs()
+        out_dir = DATA_DIR / "learning_runs"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / f"auto_learn_moves_{datetime.now().strftime('%Y%m%d')}.jsonl"
+        with path.open("a", encoding="utf-8") as fh:
+            for sr in step_results or []:
+                step = sr.get("step")
+                cands = sr.get("candidates", []) or []
+                prev = None
+                for cand in cands:
+                    s = cand.get("score")
+                    if s is None:
+                        continue
+                    rec = {
+                        "generation": gen,
+                        "stage": stage,
+                        "move": f"{step}={cand.get('v')}",
+                        "before_score": prev if prev is not None else s,
+                        "after_score": s,
+                        "score_delta": (s - prev) if prev is not None else 0.0,
+                        "after_max_swr": cand.get("max_swr"),
+                        "after_gain": cand.get("gain"),
+                        "after_fb": cand.get("fb"),
+                    }
+                    fh.write(json.dumps(rec) + "\n")
+                    prev = s
+        return path
+
+
+# ---------------------------------------------------------------------------
+# Warm start from the best matching past run in the DB
+# ---------------------------------------------------------------------------
+def warm_start_geometry(con, cfg, fallback_elements, *, sig=None,
+                        height_ft=None, log_fn=None):
+    """If the DB holds a good prior run for this exact design, start from its
+    geometry instead of the generic seed.
+
+    Two filters are applied -- both critical, because a previous fix for
+    'wrong element count' fixed only one of two leaks:
+
+      1. SAME element set (count + names).  A 7-el geometry can't warm-start
+         a 4-el design.
+
+      2. SAME design signature (taper | band | height | n_elements) when one
+         is supplied.  A run tuned for CB (~27 MHz, +/-0.5 MHz) used to be
+         pulled when the user later asked for a 24-30 MHz OWA band, even
+         though the directors are tuned 1+ MHz off the new band and the
+         baseline SWR comes back at 100+.  Filtering on the signature scope
+         (which lives in design_key as 'project|sig|gen|ts') stops that.
+
+    Plus a SANITY CHECK: if the candidate's baseline SWR over the user's
+    CURRENT band is absurd (> 5:1), reject it and try the next candidate
+    -- nothing is worse than a 'warm-start' that's actually colder than
+    the fresh seed."""
+    cur = con.cursor()
+    want_names = sorted(str(e["name"]).upper() for e in fallback_elements)
+    n_want = len(fallback_elements)
+    pattern = f"{cfg.project_name}|%"
+    # Three filter tiers, MOST specific first.  Each tier's hits get the
+    # sanity probe; if all are rejected we fall through to the next tier.
+    # Tier 1: exact sig match (taper + band + height + n_elements).
+    # Tier 2: sig parts WITHOUT band -- allow a CB tune to seed an OWA tune
+    #         IF the SWR sanity probe says the geometry still works in the
+    #         user's CURRENT band.  Stops 'change bandwidth -> start from
+    #         garbage' (user complaint).
+    # Tier 3: project-name-only -- legacy DBs with no sig embedded.
+    tiers = []
+    if sig:
+        tiers.append(("sig",      f"%|{sig}|%"))
+        # Pull out the taper|height|n part and drop the band segment.
+        parts = sig.split("|")
+        if len(parts) >= 4:
+            taper, _band, h, n = parts[0], parts[1], parts[2], parts[3]
+            broader = f"%|{taper}|%|{h}|{n}|%"     # any band
+            tiers.append(("sig_no_band", broader))
+    tiers.append(("name_only", None))               # no extra filter
+
+    candidate_ids: list = []
+    seen: set = set()
+    for tier_name, extra in tiers:
+        if extra is None:
+            cur.execute("""
+                SELECT r.id, r.design_key FROM runs r
+                WHERE r.status='DONE' AND r.design_key LIKE ?
+                  AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+                ORDER BY r.max_swr ASC, r.avg_swr ASC
+            """, (pattern, n_want))
+        else:
+            cur.execute("""
+                SELECT r.id, r.design_key FROM runs r
+                WHERE r.status='DONE' AND r.design_key LIKE ?
+                  AND r.design_key LIKE ?
+                  AND (SELECT COUNT(*) FROM elements e WHERE e.run_id=r.id) = ?
+                ORDER BY r.max_swr ASC, r.avg_swr ASC
+            """, (pattern, extra, n_want))
+        for r in cur.fetchall():
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                candidate_ids.append((r["id"], tier_name))
+
+    # Resolve sanity threshold: a fresh seed at the wrong band typically has
+    # SWR < 5 at worst; > 5 means the warm-start geometry's resonance is
+    # somewhere else entirely and we'd start the descent at a baseline an
+    # order of magnitude worse than just using the user's current geometry.
+    sanity_swr = 5.0
+    glb = cfg_band                              # (f_low, f_high) of THIS run
+    h_ft = float(height_ft) if height_ft is not None else float(getattr(cfg, "height_ft", 30.0))
+
+    for run_id, tier_name in candidate_ids:
+        ecur = con.cursor()
+        ecur.execute("SELECT name, position_in, length_in FROM elements "
+                     "WHERE run_id=? ORDER BY position_in", (run_id,))
+        els = [{"name": r["name"], "position_in": r["position_in"],
+                "length_in": r["length_in"]} for r in ecur.fetchall()]
+        if not els:
+            continue
+        if sorted(str(e["name"]).upper() for e in els) != want_names:
+            continue
+        # Sanity probe across THIS run's current band, not the stored one.
+        try:
+            _curve, mx, _av = v2_runner.band_swr_curve(
+                els, glb[0], glb[1], min(11, max(5, cfg.band_sweep_points // 4)),
+                h_ft)
+        except Exception:
+            mx = 99.0
+        if mx > sanity_swr:
+            if log_fn:
+                log_fn(f"[warm-start] skipping run #{run_id} ({tier_name}): "
+                       f"baseline SWR {mx:.2f} > {sanity_swr:.0f} in current band "
+                       f"({glb[0]:.3f}-{glb[1]:.3f} MHz) -- geometry is tuned for "
+                       f"a different design.")
+            continue
+        if log_fn and tier_name != "sig":
+            log_fn(f"[warm-start] cross-signature match (tier={tier_name}): "
+                   f"using run #{run_id} -- candidate SWR {mx:.2f} <= sanity "
+                   f"threshold so its geometry will help even though the "
+                   f"design signature isn't exact.")
+        return els, run_id
+    return fallback_elements, None
+
+
+# ---------------------------------------------------------------------------
+# Main loop
+# ---------------------------------------------------------------------------
+def run_learning(elements, rules, minis, procedure, cfg: LearnConfig, log_fn=print,
+                 on_move=None):
+    """Run an end-to-end self-learning tune.
+
+    Optional `on_move` is invoked for EVERY candidate the matcher considers
+    (accepted or rejected).  Used by the Tune & Learn page to drive a live
+    status panel (centre R/X/SWR/RL/band-max) while the tune runs."""
+    global cfg_band
+
+    # Lock the scorer to the requested wideband SWR target.
+    _set_swr_profile(cfg.swr_profile)
+
+    # Apply construction options (grounded/boom) so every solve, sweep, export
+    # and report uses the same physical model for this run.  Honour the new
+    # tristate `grounding` when present; fall back to the legacy `grounded`
+    # bool for older callers / saved configs.
+    g_mode = getattr(cfg, "grounding", None)
+    if g_mode:
+        v2_runner.GROUNDING = str(g_mode)
+        v2_runner.GROUNDED = g_mode in ("cell_insulated", "all_grounded", "grounded")
+    else:
+        v2_runner.GROUNDED = bool(getattr(cfg, "grounded", False))
+        v2_runner.GROUNDING = "all_grounded" if v2_runner.GROUNDED else "all_insulated"
+    v2_runner.BOOM_DIAMETER_IN = float(getattr(cfg, "boom_diameter_in", 1.5))
+
+    # Make the optimizer score across the full band (not just 5 spot freqs) so
+    # it can be driven to a wideband low-SWR target.
+    v2_runner.EVAL_FREQ_POINTS = max(7, int(cfg.band_sweep_points))
+
+    glb = rules["global"]
+    f_low = float(glb["freq_mhz_low"])
+    f_high = float(glb["freq_mhz_high"])
+    cfg_band = (f_low, f_high)
+    f_step = round((f_high - f_low) / max(1, cfg.band_sweep_points - 1), 5)
+
+    con = connect() if cfg.db_path is None else _connect_path(cfg.db_path)
+
+    try:
+        # Warm start -- match by design signature first so a CB-band geometry
+        # can't be loaded into an OWA-band tune.
+        original = copy.deepcopy(elements)
+        sig = _design_signature(elements, cfg, f_low, f_high)
+        elements, warm_id = warm_start_geometry(
+            con, cfg, elements, sig=sig,
+            height_ft=cfg.height_ft, log_fn=log_fn,
+        )
+        # In FREE mode the user explicitly told us to LET THE OPTIMIZER
+        # PICK THE BOOM -- so a DB warm-start with a different boom length
+        # is exactly what we want as a starting seed.  Skip the
+        # "current has stronger beam" override that would normally pin us
+        # to the on-disk geometry.  In FIXED / locked mode we still want
+        # that override (the user's hand-tuned beam is the point).
+        free_mode = bool(getattr(cfg, "tune_spacings", False))
+        if (warm_id is not None
+                and str(getattr(cfg, "tune_goal", "")) == "hybrid"
+                and not free_mode):
+            # The hybrid needs to begin from full-length (beam) directors. The
+            # SWR-ranked warm-start can hand it a pattern-degraded geometry (low
+            # SWR but flattened beam), which the cell can't recover. Compare on
+            # BEAM strength (gain + F/B, with the same matchability guard the
+            # optimiser uses) — the cell will handle SWR — and keep the warm-start
+            # only if its beam beats the current geometry's.
+            mb_warm = match_opt._beam_metrics(elements, rules, cfg.height_ft)
+            mb_orig = match_opt._beam_metrics(original, rules, cfg.height_ft)
+            q_warm = match_opt._beam_score(mb_warm, 0.5) if mb_warm else -1e9
+            q_orig = match_opt._beam_score(mb_orig, 0.5) if mb_orig else -1e9
+            if q_orig >= q_warm:
+                elements, warm_id = original, None
+                log_fn("[warm-start] current geometry has the stronger beam — "
+                       "starting from it (skipping a pattern-degraded warm-start)")
+        if warm_id is not None:
+            log_fn(f"[warm-start] resuming from DB run #{warm_id} for '{cfg.project_name}'")
+        else:
+            log_fn(f"[warm-start] starting from the current geometry for '{cfg.project_name}'")
+
+        memory = MoveMemory()
+        current = copy.deepcopy(elements)
+
+        # Baseline
+        base = v2_runner.evaluate(current, rules, height_ft=cfg.height_ft)
+        if "error" in base:
+            raise RuntimeError(f"baseline eval failed: {base['error']}")
+        curve, band_max = sweep_band(current, f_low, f_high, cfg.band_sweep_points, cfg.height_ft)
+        base_score = v2_scorer.score(**base)
+        best_score = base_score
+        best_geo = copy.deepcopy(current)
+        best_metrics = dict(base, band_max_swr=band_max)
+        save_generation(con, cfg, 0, "baseline", current, base, curve, f_step, sig=sig)
+        log_fn(f"[gen 0] baseline  score={base_score:+.1f}  band_max_swr={band_max:.3f}  "
+               f"gain={base.get('gain_dbi',0):.2f}  fb={base.get('fb_db',0):.2f}")
+
+        if band_max <= cfg.target_max_swr and not cfg.use_matcher:
+            log_fn(f"[done] baseline already meets SWR<= {cfg.target_max_swr} across band.")
+            return _result(best_geo, best_metrics, best_score, 0)
+
+        # -------------------------------------------------------------------
+        # Wideband coordinate-descent matcher (default).  Minimises the WORST
+        # in-band SWR (the user's real objective) using the fast SWR-only
+        # evaluator, then recovers gain/F-B while holding the match.  This
+        # replaces the old greedy single-element procedure that plateaued.
+        # -------------------------------------------------------------------
+        if cfg.use_matcher:
+            log_fn(f"\n[matcher] wideband coordinate descent, target SWR<= {cfg.target_max_swr}")
+            sig = _design_signature(current, cfg, f_low, f_high)
+            learned_start = _learned_dof_starts(con, sig)
+            if learned_start:
+                log_fn(f"[learn] {len(learned_start)} parameter(s) recalled from "
+                       f"{_moves_count(con, sig)} past moves for this design")
+
+            # Persist every move LIVE so nothing is lost if the run is stopped
+            # or errors partway through.
+            ts0 = now_utc()
+            saved = {"n": 0}
+
+            def _sink(m):
+                con.execute(
+                    "INSERT INTO learned_moves (created_utc, signature, dof, value, band_max_swr, accepted) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (ts0, sig, m["dof"], float(m["value"]), float(m["band_max_swr"]), int(m["accepted"])))
+                saved["n"] += 1
+                if saved["n"] % 20 == 0:
+                    con.commit()
+                    log_fn(f"[learn] saved {saved['n']} moves so far...")
+                # Forward to the page-side callback for live UI updates.
+                # TuneStopped is re-raised so it can abort the whole tune;
+                # any other on_move error is swallowed (live-panel rendering
+                # failures must never kill the matcher).
+                if on_move is not None:
+                    try:
+                        on_move(m)
+                    except match_opt.TuneStopped:
+                        raise
+                    except Exception:
+                        pass
+
+            try:
+                # FREE mode: the user explicitly wants the optimizer to
+                # EXPLORE boom lengths.  Force a minimum of 3 restarts so
+                # the descent gets multiple random perturbations to escape
+                # the local basin and try genuinely different boom spans.
+                # Without this, restarts=0 in the UI means zero exploration
+                # and the boom never moves out of its starting basin.
+                optimizer_restarts = max(1, cfg.max_generations)
+                if bool(getattr(cfg, "tune_spacings", False)):
+                    optimizer_restarts = max(optimizer_restarts, 3)
+                    if optimizer_restarts > max(1, cfg.max_generations):
+                        log_fn(f"[free-mode] forcing optimizer to "
+                               f"{optimizer_restarts} restarts (you set "
+                               f"{cfg.max_generations}) so it can try "
+                               f"genuinely different boom lengths.  Each "
+                               f"restart perturbs director gaps by 30-50% "
+                               f"of their rules range to escape the local "
+                               f"basin.")
+                new_geo, band_max, curve = match_opt.optimize(
+                    current, rules, height_ft=cfg.height_ft,
+                    target_swr=cfg.target_max_swr, points=cfg.band_sweep_points,
+                    restarts=optimizer_restarts,
+                    polish_gain=cfg.polish_gain, log_fn=log_fn,
+                    learned_start=learned_start, on_move=_sink,
+                    goal=getattr(cfg, "tune_goal", "wideband"),
+                    tune_spacings=bool(getattr(cfg, "tune_spacings", False)),
+                )
+            except match_opt.TuneStopped:
+                # User hit Stop.  Return whatever the descent had as best so
+                # far (it was being written into the elements list in-place
+                # via _apply; we eval that and surface it as the result).
+                con.commit()
+                log_fn("[stop] User requested stop. Returning best geometry so far.")
+                metrics = v2_runner.evaluate(current, rules, height_ft=cfg.height_ft)
+                if "error" in metrics:
+                    return _result(best_geo, best_metrics, best_score, 0)
+                score = v2_scorer.score(**metrics)
+                if metrics.get("max_swr", 99) < best_metrics.get("band_max_swr", 99):
+                    best_geo, best_metrics, best_score = (
+                        copy.deepcopy(current),
+                        dict(metrics, band_max_swr=metrics.get("max_swr", 99)),
+                        score)
+                return _result(best_geo, best_metrics, best_score, 1)
+            finally:
+                con.commit()
+            total = _moves_count(con, sig)
+            log_fn(f"[learn] logged {saved['n']} moves this run (memory now holds {total} for this design)")
+            metrics = v2_runner.evaluate(new_geo, rules, height_ft=cfg.height_ft)
+            if "error" in metrics:
+                log_fn(f"[matcher] final eval failed: {metrics['error']}")
+                return _result(best_geo, best_metrics, best_score, 0)
+            metrics = dict(metrics, band_max_swr=band_max)
+            score = v2_scorer.score(**metrics)
+            save_generation(con, cfg, 1, "wideband_match", new_geo, metrics, curve, f_step, sig=sig)
+            log_fn(f"\n[matcher] done  band_max_swr={band_max:.3f}  "
+                   f"gain={metrics.get('gain_dbi',0):.2f}  fb={metrics.get('fb_db',0):.2f}  "
+                   f"score={score:+.1f}")
+            baseline_band = best_metrics.get("band_max_swr", 99.0)
+            # FREE mode: the user explicitly asked the optimizer to PICK the
+            # boom -- adopt its result unconditionally.  Otherwise (FIXED
+            # mode) keep the safety revert that protects a hand-locked
+            # geometry from a worse tune.
+            free_mode = bool(getattr(cfg, "tune_spacings", False))
+            base_span = new_span = None
+            try:
+                base_span = (max(float(e["position_in"]) for e in elements)
+                             - min(float(e["position_in"]) for e in elements))
+                new_span = (max(float(e["position_in"]) for e in new_geo)
+                            - min(float(e["position_in"]) for e in new_geo))
+            except Exception:
+                pass
+            adopt = (free_mode
+                     or band_max < baseline_band - 1e-6
+                     or band_max <= cfg.target_max_swr)
+            if adopt:
+                best_geo, best_metrics, best_score = copy.deepcopy(new_geo), metrics, score
+                reason = ("FREE mode -- adopting whatever the optimizer found"
+                          if free_mode and band_max >= baseline_band
+                          else (f"band-max {band_max:.3f} <= baseline "
+                                f"{baseline_band:.3f}"))
+                if base_span is not None and new_span is not None:
+                    log_fn(f"[adopt] {reason}.  boom span "
+                           f"{base_span:.2f}\" -> {new_span:.2f}\" "
+                           f"(delta {new_span - base_span:+.2f}\").")
+                else:
+                    log_fn(f"[adopt] {reason}.")
+            else:
+                # FIXED mode + optimizer worsened SWR.  Keep the user's
+                # input geometry but tell them what was tried.
+                if base_span is not None and new_span is not None:
+                    log_fn(f"[keep-baseline] FIXED mode: optimizer best "
+                           f"band-max {band_max:.3f} > YOUR INPUT'S baseline "
+                           f"{baseline_band:.3f} -- your locked geometry "
+                           f"(boom {base_span:.2f}\") was already better, "
+                           f"keeping it.  Optimizer DID explore -- it tried "
+                           f"a boom of {new_span:.2f}\" (delta "
+                           f"{new_span - base_span:+.2f}\") at SWR "
+                           f"{band_max:.3f}.  Switch to FREE mode to let it "
+                           f"keep whatever it finds, or raise restart count.")
+                else:
+                    log_fn(f"[keep-baseline] FIXED mode: optimizer best "
+                           f"band-max {band_max:.3f} > baseline "
+                           f"{baseline_band:.3f} -- keeping your input.")
+            if band_max <= cfg.target_max_swr:
+                log_fn(f"[done] reached SWR <= {cfg.target_max_swr} across the band.")
+            else:
+                log_fn(f"[done] best achievable band_max_swr={band_max:.3f} (target {cfg.target_max_swr}).")
+            return _result(best_geo, best_metrics, best_score, 1)
+
+        stale = 0
+        for gen in range(1, cfg.max_generations + 1):
+            # Learning: narrow search around proven values after gen 1.
+            active_minis = memory.narrow(minis, cfg.narrow_window_in, cfg.narrow_step_in) if gen > 1 else minis
+            active_by_name = {m["name"]: m for m in active_minis}
+            n_narrowed = sum(1 for m in active_minis if m.get("_narrowed"))
+            log_fn(f"\n[gen {gen}] running '{procedure['name']}'  "
+                   f"({n_narrowed} learned/narrowed mini-tunes applied)")
+
+            new_geo, score, metrics, step_results = v2_runner.run_procedure(
+                procedure, active_by_name, current, rules, log_fn=None
+            )
+            if metrics is None:
+                log_fn(f"[gen {gen}] procedure produced no result, stopping.")
+                break
+
+            # Learn from this generation's candidate logs.
+            memory.ingest_step_results(step_results)
+            memory.write_jsonl(step_results, gen, procedure["name"])
+
+            curve, band_max = sweep_band(new_geo, f_low, f_high, cfg.band_sweep_points, cfg.height_ft)
+            metrics = dict(metrics, band_max_swr=band_max)
+            save_generation(con, cfg, gen, procedure["name"], new_geo, metrics, curve, f_step, sig=sig)
+
+            # Adoption rule tuned for a WIDEBAND low-SWR target:
+            #   - while we are still above the SWR target, prefer whatever
+            #     lowers the band-max SWR (even at a small gain cost);
+            #   - once at/under target, keep optimizing the composite score
+            #     (gain + F/B) without letting SWR creep back over target.
+            best_band = best_metrics.get("band_max_swr", 99.0)
+            if best_band > cfg.target_max_swr:
+                improved = band_max < best_band - 1e-3
+            else:
+                improved = (score > best_score + 1e-6) and (band_max <= cfg.target_max_swr + 1e-6)
+            log_fn(f"[gen {gen}] score={score:+.1f}  band_max_swr={band_max:.3f}  "
+                   f"gain={metrics.get('gain_dbi',0):.2f}  fb={metrics.get('fb_db',0):.2f}  "
+                   f"{'IMPROVED' if improved else 'no improvement'}  (learned moves: {memory.moves_logged})")
+
+            if improved:
+                best_score = score
+                best_geo = copy.deepcopy(new_geo)
+                best_metrics = metrics
+                current = copy.deepcopy(new_geo)   # auto-adopt
+                stale = 0
+            else:
+                stale += 1
+
+            if band_max <= cfg.target_max_swr:
+                log_fn(f"\n[done] reached SWR <= {cfg.target_max_swr} across the band at gen {gen}.")
+                return _result(best_geo, best_metrics, best_score, gen)
+
+            if stale >= cfg.patience:
+                log_fn(f"\n[done] plateau: no improvement for {cfg.patience} generations (best band_max_swr "
+                       f"{best_metrics.get('band_max_swr',0):.3f}).")
+                return _result(best_geo, best_metrics, best_score, gen)
+
+        log_fn(f"\n[done] reached max generations ({cfg.max_generations}). "
+               f"Best band_max_swr {best_metrics.get('band_max_swr',0):.3f}.")
+        return _result(best_geo, best_metrics, best_score, cfg.max_generations)
+    finally:
+        con.close()
+
+
+def _result(geo, metrics, score, generations):
+    return {
+        "final_geometry": geo,
+        "final_metrics": metrics,
+        "final_score": score,
+        "generations": generations,
+    }
+
+
+def _design_signature(elements, cfg, f_low, f_high):
+    """Stable key grouping runs of the same antenna so learning only reuses
+    moves from a comparable design (same taper, band, height, element count).
+
+    The taper portion now also captures any PER-ELEMENT taper overrides that
+    apply to these elements, so a 'directors-thinner' build doesn't share
+    memory with the all-elements-same-tube version."""
+    return (f"{v2_runner.taper_signature(elements=elements)}|{f_low:.3f}-{f_high:.3f}"
+            f"|h{float(cfg.height_ft):.0f}|n{len(elements)}")
+
+
+def _moves_count(con, sig):
+    row = con.execute("SELECT COUNT(*) AS c FROM learned_moves WHERE signature=?", (sig,)).fetchone()
+    return row["c"] if row else 0
+
+
+def _learned_dof_starts(con, sig):
+    """Best-known value per parameter for this design: the value that produced
+    the lowest band-max SWR across all past accepted moves."""
+    rows = con.execute("""
+        SELECT dof, value FROM learned_moves
+        WHERE signature=? AND accepted=1
+          AND band_max_swr = (
+              SELECT MIN(band_max_swr) FROM learned_moves lm2
+              WHERE lm2.signature=learned_moves.signature
+                AND lm2.dof=learned_moves.dof AND lm2.accepted=1
+          )
+        GROUP BY dof
+    """, (sig,)).fetchall()
+    return {r["dof"]: r["value"] for r in rows}
+
+
+def _save_moves(con, sig, move_log):
+    if not move_log:
+        return
+    ts = now_utc()
+    con.executemany(
+        "INSERT INTO learned_moves (created_utc, signature, dof, value, band_max_swr, accepted) "
+        "VALUES (?,?,?,?,?,?)",
+        [(ts, sig, m["dof"], float(m["value"]), float(m["band_max_swr"]), int(m["accepted"]))
+         for m in move_log],
+    )
+    con.commit()
+
+
+def _set_swr_profile(profile_key):
+    opts_path = DATA_DIR / "run_options_v2.json"
+    try:
+        opts = json.loads(opts_path.read_text()) if opts_path.exists() else {}
+    except Exception:
+        opts = {}
+    opts["swr_profile"] = profile_key
+    opts.setdefault("score_mode", "composite")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    opts_path.write_text(json.dumps(opts, indent=2))
+
+
+def _connect_path(db_path):
+    import sqlite3
+    from .db import init_db
+    con = sqlite3.connect(db_path)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA foreign_keys=ON")
+    init_db(con)
+    return con
